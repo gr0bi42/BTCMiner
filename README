@@ -1,0 +1,12 @@
+BTCMiner is a Java based bitcoin miner for the ZTEX FPGA-boards.
+
+You can find more info at the ZTEX BTCMiner homepage: http://www.ztex.de/btcminer/
+
+How to compile
+==============
+
+install Java
+install sdcc
+checkout this git repository
+download and install ZTEX EZ-USB FX2 SDK (in the directory BTCMiner/ztex)
+make
