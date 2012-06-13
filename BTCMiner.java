@@ -45,6 +45,7 @@ class ParameterException extends Exception {
 		"    -lp <url> <user name> <password>\n" +
 		"                      URL, user name and password of a long polling server (determined automatically by default)\n" +
 		"    -l <log file>     Log file (default: BTCMiner.log)\n" +
+		"    -nolog            do not log to file\n" +
 		"    -lb <log file>    Log of submitted blocks file\n" +
 		"    -m s|t|p|c        Set single mode, test mode, programming mode or cluster mode\n" +
 		"                      Single mode: runs BTCMiner on a single board (default mode)\n" +
@@ -1758,6 +1759,7 @@ class BTCMiner implements MsgObj {
 		boolean printBus = false;
 		boolean verbose = false;
 		boolean eraseFirmware = false;
+		boolean noLog = false;
 
 		String filterType = null;
 		String logFileName = "BTCMiner.log";
@@ -1933,12 +1935,15 @@ class BTCMiner implements MsgObj {
 					} catch (Exception e) {
 						throw new ParameterException("Number expected after -oh");
 					}
+				} else if ( args[i].equals("-nolog") ) {
+					noLog = true;
 				} else {
 					throw new ParameterException("Invalid Parameter: " + args[i]);
 				}
 			}
 
-			logFile = new PrintStream(new FileOutputStream(logFileName, true), true);
+			if (noLog != true)
+				logFile = new PrintStream(new FileOutputStream(logFileName, true), true);
 
 			if (overheatThreshold > 0.1001)
 				System.err.println("Warning: overheat threshold set to " + overheatThreshold + ": overheat shutdown may be triggered too late, recommended values: 0..0.1");
