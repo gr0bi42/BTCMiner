@@ -1498,8 +1498,12 @@ class BTCMiner implements MsgObj {
 		}
 
 		if (bestM != freqM) {
+			if (freqM > 0) {
+				msg("Change frequency from " + String.format("%.2f", (freqM + 1) * (freqM1)) + "MHz to " + String.format("%.2f", (bestM + 1) * (freqM1)) + "MHz");
+			} else {
+				msg("Set frequency to " + String.format("%.2f", (bestM + 1) * (freqM1)) + "MHz");
+			}
 			freqM = bestM;
-			msg("Set frequency to " + String.format("%.2f", (freqM + 1) * (freqM1)) + "MHz");
 			setFreq(freqM);
 		}
 
