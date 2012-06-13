@@ -1915,7 +1915,7 @@ class BTCMiner implements MsgObj {
 				} else if (args[i].equals("-ep0")) {
 					forceEP0Config = true;
 				} else if (args[i].equals("-h")) {
-					System.err.println(ParameterException.helpMsg);
+					System.out.println(ParameterException.helpMsg);
 					System.exit(0);
 				} else if (args[i].equals("-n")) {
 					i++;
