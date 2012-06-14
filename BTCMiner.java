@@ -57,6 +57,7 @@ class ParameterException extends Exception {
 		"                      the overheat shutdown is triggered (default: 0.04, recommended: 0 to 0.08)\n" +
 		"    -ps <string>      Select devices with the given serial number,\n" +
 		"                      in cluster mode: select devices which serial number starts with the given string\n" +
+		"    -ac <seconds>     automatically reset performance and error counters every given seconds\n" +
 		"    -v                Be verbose\n" +
 		"    -h                This help\n" +
 		"Parameters in single mode, test mode and programming mode\n" +
@@ -307,12 +308,13 @@ class BTCMinerCluster {
 
 	// ******* constructor
 	// *******************************************************
-	public BTCMinerCluster(boolean verbose) {
+	public BTCMinerCluster(boolean verbose, long autoResetInterval) {
 		final long infoInterval = 300000;
 
 		scan(verbose);
 
 		long nextInfoTime = new Date().getTime() + 60000;
+		long nextResetTime = new Date().getTime() + (3 * 60 * 1000);	// first auto reset after 3 minutes
 
 		boolean quit = false;
 		while (threads.size() > 0 && !quit) {
@@ -343,6 +345,14 @@ class BTCMinerCluster {
 				nextInfoTime = new Date().getTime() + infoInterval;
 			}
 
+			if (autoResetInterval > 0 && new Date().getTime() > nextResetTime) {
+				for (int i = allMiners.size() - 1; i >= 0; i--) {
+					allMiners.elementAt(i).resetCounters();
+				}
+				BTCMiner.printMsg("Auto reset all performance end error counters.");
+				nextResetTime = new Date().getTime() + autoResetInterval;
+			}
+ 
 			for (int i = threads.size() - 1; i >= 0; i--) {
 				BTCMinerThread t = threads.elementAt(i);
 				if (!t.running()) {
@@ -388,8 +398,8 @@ class BTCMinerCluster {
 				} else if (cmd.equalsIgnoreCase("c") || cmd.equalsIgnoreCase("counter_reset")) {
 					for (int i = allMiners.size() - 1; i >= 0; i--) {
 						allMiners.elementAt(i).resetCounters();
-						BTCMiner.printMsg("Reset all performance end error counters.");
 					}
+					BTCMiner.printMsg("Reset all performance end error counters.");
 				} else if (cmd.equalsIgnoreCase("h") || cmd.equalsIgnoreCase("help")) {
 					System.out.println("q(uit)          Exit BTCMiner");
 					System.out.println("h(elp)          Print theis help");
@@ -1766,6 +1776,8 @@ class BTCMiner implements MsgObj {
 
 		char mode = 's';
 
+		long autoResetInterval = 0;
+
 		rpcCount = 1;
 		rpcurl[0] = "http://127.0.0.1:8332";
 		rpcuser[0] = null;
@@ -1935,7 +1947,19 @@ class BTCMiner implements MsgObj {
 					} catch (Exception e) {
 						throw new ParameterException("Number expected after -oh");
 					}
-				} else if ( args[i].equals("-nolog") ) {
+				} else if (args[i].equals("-ac")) {
+					i++;
+					try {
+						if (i >= args.length)
+							throw new Exception();
+						autoResetInterval = Long.parseLong(args[i]);
+						if (autoResetInterval < 0)
+							throw new Exception();
+						autoResetInterval *= 1000;	// in milliseconds
+					} catch (Exception e) {
+						throw new ParameterException("Wrong or missing parameter after -ac");
+					}
+				} else if (args[i].equals("-nolog")) {
 					noLog = true;
 				} else {
 					throw new ParameterException("Invalid Parameter: " + args[i]);
@@ -2074,7 +2098,7 @@ class BTCMiner implements MsgObj {
 				}
 				System.out.println("\ntotal amount of (re-)programmed devices: " + j);
 			} else if (mode == 'c') {
-				new BTCMinerCluster(verbose);
+				new BTCMinerCluster(verbose, autoResetInterval);
 			}
 
 		} catch (Exception e) {
