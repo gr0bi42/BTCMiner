@@ -26,8 +26,20 @@ Changes
 How to compile
 ==============
 
+Successfully done on Ubuntu 11.04
 install Java
 install sdcc
 checkout this git repository
 download and install ZTEX EZ-USB FX2 SDK (in the directory BTCMiner/ztex)
 make
+Result => ZtexBTCMiner.jar
+
+Example (2 pools, 1 backup pool):
+---------------------------------
+java -cp ZtexBTCMiner.jar BTCMiner -m h -id fpga1 -p 8001 -o Deepbit http://pit.deepbit.net:8332 user pass -o Slush http://api.bitcoin.cz:8332 user pass -b Eligius http://ra.mining.eligius.st:8337 1Btf3BqUegfe5iFdWsgfBf1Ew3YsAvsrLT x
+
+URL to open in browser: http://<your ip address here>:8001/pools
+
+
+
+Good luck and Happy mining... Donations are welcome: 1Btf3BqUegfe5iFdWsgfBf1Ew3YsAvsrLT :-)
