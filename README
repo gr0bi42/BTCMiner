@@ -2,6 +2,27 @@ BTCMiner is a Java based bitcoin miner for the ZTEX FPGA-boards.
 
 You can find more info at the ZTEX BTCMiner homepage: http://www.ztex.de/btcminer/
 
+Changes
+=======
+31 Jul 2012:
+- Upd: update to BTCMiner Release 120703
+- New: builtin http server based on NanoHTTPD (http://elonen.iki.fi/code/nanohttpd/)
+- New: straight forward builtin webpages /pools, /miner, /json (should be replaced by something more sophisticated)
+- New: pool switching via http-interface
+- Fix: jsonParse()
+- Fix: accounting rejected shares
+
+14 Jun 2012:
+- New: option -ac <seconds> to auto reset error and performance counter
+
+13 Jun 2012:
+- New: option -nolog to disable file logging
+- Fix: print help message to stdout
+- Chg: reformated with eclipse source code beautifier
+- New: starting based on BTCMiner Release 120417
+
+
+
 How to compile
 ==============
 
