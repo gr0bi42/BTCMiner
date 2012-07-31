@@ -16,10 +16,6 @@
    along with this program; if not, see http://www.gnu.org/licenses/.
 !*/
 
-/* TODO: 
- * HUP signal
- */
-
 import java.io.*;
 import java.util.*;
 import java.net.*;
@@ -32,31 +28,307 @@ import ch.ntb.usb.*;
 import ztex.*;
 
 // *****************************************************************************
+// ******* BTCMinerHTTPD *******************************************************
+// *****************************************************************************
+class BTCMinerHTTPD extends NanoHTTPD {
+	private File myRootDir;
+	private int refreshTmo = 10;
+
+	// ******* Constructor
+	// *************************************************************************
+	public BTCMinerHTTPD(int port, File wwwroot) throws IOException {
+		super(port, wwwroot);
+		this.myRootDir = wwwroot;
+	}
+
+	// ******* Response
+	// *************************************************************************
+	public Response serve(String uri, String method, Properties header, Properties parms, Properties files) {
+		if (uri.equalsIgnoreCase("/pools")) {
+			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, servePools(uri, header));
+		} else if (uri.equalsIgnoreCase("/miner")) {
+			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveMiner(uri, header));
+		} else if (uri.equalsIgnoreCase("/json")) {
+			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveJson(uri, header));
+		} else if (uri.equalsIgnoreCase("/s_pool")) {
+			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectPool(parms));
+		} else if (uri.equalsIgnoreCase("/s_refresh")) {
+			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectRefresh(parms));
+		} else {
+			return serveFile(uri, header, myRootDir, true);
+		}
+	}
+
+	// ******* servePools
+	// *************************************************************************
+	private String servePools(String uri, Properties header) {
+		String msg = "<html><head>";
+		if (refreshTmo > 0) {
+			msg += "<meta http-equiv=\"refresh\" content=\"" + String.format("%d;", refreshTmo) + uri + "\">";
+		}
+		msg += "</head><body><h3>Ztex Cluster #" + BTCMiner.clusterId;
+		if (header.getProperty("host") != null) {
+			msg += " @ " + header.getProperty("host");
+		}
+		msg += "</h3>";
+		if (BTCMiner.cluster == null) {
+			msg += "Please wait while initializing cluster ...";
+		} else {
+			msg += "Total Hashrate: " + String.format("%.1f", BTCMiner.cluster.totalHashrate()) + "<br />";
+			msg += "Submitted Hashrate: " + String.format("%.1f", BTCMiner.cluster.submittedHashrate()) + "<p />";
+
+			int server = BTCMiner.rpcCount;
+			int backup1 = BTCMiner.rpcFirstBackup;
+			int backup = 0;
+			if (backup1 > 0) {
+				backup = server - backup1;
+			}
+
+			msg += "Number of pools: " + String.format("%d", server - backup) + "<br />";
+			for (int i = 0; i < (server - backup); i++) {
+				double rejects = 0.0;
+				if (BTCMiner.rpcSharesAccepted[i] > 0) {
+					rejects = (100.0 * BTCMiner.rpcSharesRejected[i]) / BTCMiner.rpcSharesAccepted[i];
+				}
+				boolean active = BTCMiner.rpcstate[i];
+				if (active)
+					msg += "<b>";
+				msg += String.format("%02d: ", i) + BTCMiner.rpcname[i] + String.format(" - G:%d A:%d R:%d/%.1f", BTCMiner.rpcSharesGetwork[i], BTCMiner.rpcSharesAccepted[i], BTCMiner.rpcSharesRejected[i], rejects) + "%<br />";
+				if (active)
+					msg += "</b>";
+			}
+
+			if ((server - backup) > 1) {
+				msg += "<form action=\"s_pool\" method=\"post\"><select name=\"pool\">";
+				for (int i = 0; i < (server - backup); i++) {
+					if (!BTCMiner.rpcstate[i])
+						msg += "<option value=\"" + String.format("%d", i) + "\">" + BTCMiner.rpcname[i] + "</option>";
+				}
+				msg += "</select><input type=\"hidden\" name=\"uri\" value=\"" + uri + "\" /><input type=\"submit\" value=\"Switch Pool\" /></form><br />";
+			}
+
+			if (backup > 0) {
+				msg += "Number of backup pools: " + String.format("%d", backup) + "<br />";
+				for (int i = backup1; i < server; i++) {
+					double rejects = 0.0;
+					if (BTCMiner.rpcSharesAccepted[i] > 0) {
+						rejects = (100.0 * BTCMiner.rpcSharesRejected[i]) / BTCMiner.rpcSharesAccepted[i];
+					}
+					msg += String.format("%02d: ", i) + BTCMiner.rpcname[i] + String.format(" - G:%d A:%d R:%d/%.1f", BTCMiner.rpcSharesGetwork[i], BTCMiner.rpcSharesAccepted[i], BTCMiner.rpcSharesRejected[i], rejects) + "%<br />";
+				}
+			}
+
+			if (BTCMiner.longPollURL != null) {
+				msg += "<p />LongPoll URL: " + BTCMiner.longPollURL;
+			} else {
+				msg += "<p />Longpoll URL: none";
+			}
+
+			msg += "<p /><hr />Goto: <a href=\"/miner\">Miner Statistics</a>";
+			String currRefresh;
+			if (refreshTmo <= 0) {
+				currRefresh = "Off";
+			} else {
+				currRefresh = String.format("%ds", refreshTmo);
+			}
+			msg += "&nbsp;|&nbsp;Refresh: " + currRefresh + "&nbsp;-&nbsp;New:  <a href=\"/s_refresh?refresh=0&uri=/pools\">Off</a> <a href=\"/s_refresh?refresh=5&uri=/pools\">5sec</a>  <a href=\"/s_refresh?refresh=10&uri=/pools\">10sec</a>  <a href=\"/s_refresh?refresh=30&uri=/pools\">30sec</a>  <a href=\"/s_refresh?refresh=60&uri=/pools\">60sec</a>";
+			Date now = new Date();
+			msg += "&nbsp;|&nbsp;Page generated: " + now.toString();
+		}
+		msg += "</body></html>";
+
+		return msg;
+	}
+
+	// ******* serveMiner
+	// *************************************************************************
+	private String serveMiner(String uri, Properties header) {
+		StringBuffer sb = new StringBuffer("<html><head>");
+		if (refreshTmo > 0) {
+			sb.append("<meta http-equiv=\"refresh\" content=\"" + refreshTmo + ";" + uri + "\">");
+		}
+		sb.append("</head><body><h3>Ztex Cluster #" + BTCMiner.clusterId);
+
+		if (header.getProperty("host") != null) {
+			sb.append(" @ " + header.getProperty("host"));
+		}
+		sb.append("</h3>");
+		if (BTCMiner.cluster == null) {
+			sb.append("Please wait while initializing cluster ...");
+		} else {
+			sb.append("Total Hashrate: " + String.format("%.1f", BTCMiner.cluster.totalHashrate()) + "<br />");
+			sb.append("Submitted Hashrate: " + String.format("%.1f", BTCMiner.cluster.submittedHashrate()) + "<br />");
+
+			for (int i = 0;; i++) {
+				String info = BTCMiner.cluster.getMinerInfo(i);
+				if (info == null) {
+					break;
+				}
+				sb.append(info + "<br />");
+			}
+
+			sb.append("<p /><hr />Goto: <a href=\"/pools\">Pool Statistics</a>");
+			String currRefresh;
+			if (refreshTmo <= 0) {
+				currRefresh = "Off";
+			} else {
+				currRefresh = String.format("%ds", refreshTmo);
+			}
+			sb.append("&nbsp;|&nbsp;Refresh: " + currRefresh + "&nbsp;-&nbsp;New:  <a href=\"/s_refresh?refresh=0&uri=/miner\">Off</a> <a href=\"/s_refresh?refresh=5&uri=/miner\">5sec</a>  <a href=\"/s_refresh?refresh=10&uri=/miner\">10sec</a>  <a href=\"/s_refresh?refresh=30&uri=/miner\">30sec</a>  <a href=\"/s_refresh?refresh=60&uri=/miner\">60sec</a>");
+			Date now = new Date();
+			sb.append("&nbsp;|&nbsp;Page generated: " + now.toString());
+		}
+		sb.append("</body></html>");
+
+		return sb.toString();
+	}
+
+	// ******* serveJson
+	// *************************************************************************
+	private String serveJson(String uri, Properties header) {
+		StringBuffer sb = new StringBuffer("{ \"id\":\"" + BTCMiner.clusterId + "\"");
+		Date now = new Date();
+		sb.append(", \"date\":\"" + now.toString() + "\"");
+		if (header.getProperty("host") != null) {
+			sb.append(", \"host\":\"" + header.getProperty("host") + "\"");
+		}
+		if (BTCMiner.cluster == null) {
+			sb.append(", \"state\":\"initializing\"");
+		} else {
+			sb.append(", \"state\":\"running\"");
+			sb.append(", \"total_hashrate\":\"" + String.format("%.1f", BTCMiner.cluster.totalHashrate()) + "\"");
+			sb.append(", \"submitted_hashrate\":\"" + String.format("%.1f", BTCMiner.cluster.submittedHashrate()) + "\"");
+			sb.append(", \"refresh\":\"" + refreshTmo + "\"");
+			if (BTCMiner.longPollURL != null) {
+				sb.append(", \"longpoll\":\"" + BTCMiner.longPollURL + "\"");
+			} else {
+				sb.append(", \"longpoll\":\"\"");
+			}
+
+			int server = BTCMiner.rpcCount;
+			int backup1 = BTCMiner.rpcFirstBackup;
+			int backup = 0;
+			if (backup1 > 0) {
+				backup = server - backup1;
+			}
+			if (server > 0) {
+				sb.append(", \"server\":{");
+				for (int i = 0; i < (server - backup); i++) {
+					if (i > 0) {
+						sb.append(", ");
+					}
+					String state;
+					if (BTCMiner.rpcstate[i]) {
+						state = "enabled";
+					} else {
+						state = "disabled";
+					}
+					sb.append("\"" + BTCMiner.rpcname[i] + "\": {\"index\":\"" + i + "\", \"state\":\"" + state + "\", \"url\":\"" + BTCMiner.rpcurl[i] + "\", \"user\":\"" + BTCMiner.rpcuser[i] + "\", \"getwork\":\"" + BTCMiner.rpcSharesGetwork[i] +  "\", \"accept\":\"" + BTCMiner.rpcSharesAccepted[i] + "\", \"reject\":\"" + BTCMiner.rpcSharesRejected[i] + "\"}");
+				}
+				sb.append("}");
+			}
+			if (backup > 0) {
+				sb.append(", \"backup_server\":{");
+				for (int i = backup1; i < server; i++) {
+					if (i > backup1) {
+						sb.append(", ");
+					}
+					sb.append("\"" + BTCMiner.rpcname[i] + "\": {\"index\":\"" + i + "\", \"state\":\"enabled\", \"url\":\"" + BTCMiner.rpcurl[i] + "\", \"user\":\"" + BTCMiner.rpcuser[i] + "\", \"getwork\":\"" + BTCMiner.rpcSharesGetwork[i] +  "\", \"accept\":\"" + BTCMiner.rpcSharesAccepted[i] + "\", \"reject\":\"" + BTCMiner.rpcSharesRejected[i] + "\"}");
+				}
+				sb.append("}");
+			}
+		}
+
+		sb.append("}");
+		return sb.toString();
+	}
+
+	// ******* serveSelectPool
+	// *************************************************************************
+	private String serveSelectPool(Properties parms) {
+		if (parms.getProperty("pool") != null) {
+			int newpool = Integer.parseInt(parms.getProperty("pool"));
+			int server = BTCMiner.rpcCount;
+			int backup1 = BTCMiner.rpcFirstBackup;
+			int backup = 0;
+			if (backup1 > 0) {
+				backup = server - backup1;
+			}
+			if (newpool >= 0 && newpool < (server - backup)) {
+				for (int i = 0; i < (server - backup); i++) {
+					if (i == newpool) {
+						BTCMiner.rpcstate[i] = true;
+					} else {
+						BTCMiner.rpcstate[i] = false;
+					}
+				}
+				if (BTCMiner.newBlockMonitor != null) {
+					synchronized (BTCMiner.newBlockMonitor) {
+						BTCMiner.disableLPTime = new Date().getTime() + 20000;
+						BTCMiner.longPollURL = null;
+						BTCMiner.longPollUser = "";
+						BTCMiner.longPollPassw = "";
+					}
+				}
+			}
+		}
+		String msg;
+		if (parms.getProperty("uri") != null) {
+			msg = "<html><head><meta http-equiv=\"refresh\" content=0;\"" + parms.getProperty("uri") + "\"></head><body></body></html>";
+		} else {
+			msg = "<html>><body></body></html>";
+		}
+		return msg;
+	}
+
+	// ******* serveSelectRefresh
+	// *************************************************************************
+	private String serveSelectRefresh(Properties parms) {
+		if (parms.getProperty("refresh") != null) {
+			int refresh = Integer.parseInt(parms.getProperty("refresh"));
+			if (refresh >= 0 && refresh <= 60) {
+				refreshTmo = refresh;
+			}
+		}
+		String msg;
+		if (parms.getProperty("uri") != null) {
+			msg = "<html><head><meta http-equiv=\"refresh\" content=0;\"" + parms.getProperty("uri") + "\"></head><body></body></html>";
+		} else {
+			msg = "<html>><body></body></html>";
+		}
+		return msg;
+	}
+}
+
+// *****************************************************************************
 // ******* ParameterException **************************************************
 // *****************************************************************************
-// Exception that prints a help message
+// Exception the prints a help message
 class ParameterException extends Exception {
-	public final static String helpMsg = new String( "Parameters:\n" +
-		"    -host <string>    Host URL (default: http://127.0.0.1:8332)\n" +
-		"    -u <string>       RPC User name\n" +
-		"    -p <string>       RPC Password\n" +
-		"    -b <url> <user name> <password>\n" +
-		"                      URL, user name and password of a backup server. Can be specified multiple times.\n" +
-		"    -lp <url> <user name> <password>\n" +
+	public final static String helpMsg = new String(
+		"Parameters:\n" +
+		"    -o <name> <url> <user name> <password> \n" +
+		"                      Name, URL, user name and password of a server. Can be specified multiple times\n" +
+		"    -b <name> <url> <user name> <password> \n" +
+		"                      Name, URL, user name and password of a backup server. Can be specified multiple times\n" +
+		"    -lp <url> <user name> <password> \n" +
 		"                      URL, user name and password of a long polling server (determined automatically by default)\n" +
 		"    -l <log file>     Log file (default: BTCMiner.log)\n" +
+		"    -l2 <log file>    Secondary log file, logs everything but statistics\n" +
+		"    -bl <log file>    Log of submitted blocks file\n" +
 		"    -nolog            do not log to file\n" +
-		"    -lb <log file>    Log of submitted blocks file\n" +
-		"    -m s|t|p|c        Set single mode, test mode, programming mode or cluster mode\n" +
+		"    -c <file name>    Secondary command input file, can be a named pipe\n" +
+		"    -m s|t|p|c|h      Set single mode, test mode, programming mode, cluster mode or http-cluster mode\n" +
 		"                      Single mode: runs BTCMiner on a single board (default mode)\n" +
 		"                      Test mode: tests a board using some test data\n" +
 		"                      Programming mode: programs device with the given firmware\n" +
-		"                      Cluster mode: runs BTCMiner on all programmed boards\n" +
+		"                      (HTTP-)Cluster mode: runs BTCMiner on all programmed boards\n" +
 		"    -ep0              Always use slow EP0 for Bitstream transfer\n" +
-		"    -oh               Overheat threshold: if the hash rate drops by that factor (but at least two frequency steps)\n" +
+		"    -oh <number>      Overheat threshold: if the hash rate drops by that factor (but at least two frequency steps)\n" +
 		"                      the overheat shutdown is triggered (default: 0.04, recommended: 0 to 0.08)\n" +
 		"    -ps <string>      Select devices with the given serial number,\n" +
 		"                      in cluster mode: select devices which serial number starts with the given string\n" +
+		"    -e <number>       Maximum error rate\n" +
 		"    -ac <seconds>     automatically reset performance and error counters every given seconds\n" +
 		"    -v                Be verbose\n" +
 		"    -h                This help\n" +
@@ -66,6 +338,9 @@ class ParameterException extends Exception {
 		"    -i                Print bus info\n" +
 		"Parameters in cluster mode\n" +
 		"    -n <number>       Maximum amount of devices per thread (default: 10)\n" +
+		"Parameters in httpd cluster mode\n" +
+		"    -id <string>      Mining cluster ID shown on status page (default default)\n" +
+		"    -p <number>       httpd port number (default: 8080)\n" +
 		"Parameters in programming mode\n" +
 		"    -pt <string>      Program devices of the given type\n" +
 		"                      If neither -ps nor -ps is given, only unconfigured devices are programmed\n" +
@@ -100,6 +375,8 @@ class FirmwareException extends Exception {
 // *****************************************************************************
 interface MsgObj {
 	public void msg(String s);
+
+	public void rejectReason(String s);
 }
 
 // *****************************************************************************
@@ -117,14 +394,14 @@ class NewBlockMonitor extends Thread implements MsgObj {
 
 	private Vector<LogString> logBuf = new Vector<LogString>();
 
-	// ******* constructor
-	// *******************************************************
+	// ******* Constructor
+	// *************************************************************************
 	public NewBlockMonitor() {
 		start();
 	}
 
 	// ******* checkNew
-	// *******************************************************
+	// *************************************************************************
 	synchronized public boolean checkNew(byte[] data) throws NumberFormatException {
 		if (data.length < 36)
 			throw new NumberFormatException("Invalid length of data");
@@ -145,7 +422,7 @@ class NewBlockMonitor extends Thread implements MsgObj {
 	}
 
 	// ******* run
-	// *******************************************************
+	// *************************************************************************
 	public void run() {
 		running = true;
 
@@ -159,7 +436,7 @@ class NewBlockMonitor extends Thread implements MsgObj {
 			if (BTCMiner.longPollURL != null && enableLP && t > enableLPTime) {
 				try {
 					// msg("info: LP");
-					BTCMiner.hexStrToData(BTCMiner.jsonParse(BTCMiner.bitcoinRequest(this, BTCMiner.longPollURL, BTCMiner.longPollUser, BTCMiner.longPollPassw, "getwork", ""), "data"), dataBuf);
+					BTCMiner.hexStrToData(BTCMiner.jsonParse(BTCMiner.bitcoinRequest(this, BTCMiner.longPollURL, BTCMiner.longPollUser, BTCMiner.longPollPassw, "getwork", "", 0), "data"), dataBuf);
 					for (int i = 0; i < 32; i++) {
 						prevBlock[i] = dataBuf[i + 4];
 					}
@@ -174,15 +451,16 @@ class NewBlockMonitor extends Thread implements MsgObj {
 						enableLPTime = new Date().getTime() + 60000;
 					}
 				} catch (Exception e) {
-					if (warnings)
+					if (warnings) {
 						msg("Warning: " + e.getLocalizedMessage());
+					}
 					warnings = false;
 				}
 			}
 
-			if (BTCMiner.longPollURL == null)
+			if (BTCMiner.longPollURL == null) {
 				enableLPTime = new Date().getTime() + 2000;
-
+			}
 			t += minLongPollInterval - new Date().getTime();
 			if (t > 5) {
 				try {
@@ -195,15 +473,20 @@ class NewBlockMonitor extends Thread implements MsgObj {
 	}
 
 	// ******* msg
-	// *******************************************************
+	// *************************************************************************
 	public void msg(String s) {
 		synchronized (logBuf) {
 			logBuf.add(new LogString(s));
 		}
 	}
 
+	// ******* rejectReason
+	// *************************************************************************
+	public void rejectReason(String s) {
+	}
+
 	// ******* print
-	// *******************************************************
+	// *************************************************************************
 	public void print() {
 		synchronized (logBuf) {
 			for (int j = 0; j < logBuf.size(); j++) {
@@ -212,11 +495,13 @@ class NewBlockMonitor extends Thread implements MsgObj {
 				if (BTCMiner.logFile != null) {
 					BTCMiner.logFile.println(BTCMiner.dateFormat.format(ls.time) + ": " + ls.msg);
 				}
+				if (BTCMiner.logFile2 != null && !ls.msg.substring(0, 18).equals("New block detected")) {
+					BTCMiner.logFile2.println(BTCMiner.dateFormat.format(ls.time) + ": " + ls.msg);
+				}
 			}
 			logBuf.clear();
 		}
 	}
-
 }
 
 // *****************************************************************************
@@ -227,14 +512,14 @@ class BTCMinerThread extends Thread {
 	private String busName;
 	private PollLoop pollLoop = null;
 
-	// ******* constructor
-	// *******************************************************
+	// ******* Constructor
+	// *************************************************************************
 	public BTCMinerThread(String bn) {
 		busName = bn;
 	}
 
 	// ******* add
-	// *******************************************************
+	// *************************************************************************
 	public void add(BTCMiner m) {
 		synchronized (miners) {
 			miners.add(m);
@@ -242,47 +527,48 @@ class BTCMinerThread extends Thread {
 		}
 
 		if (pollLoop == null) {
-			BTCMiner.printMsg("Starting mining thread for bus " + busName);
+			BTCMiner.printMsg2("Starting mining thread for bus " + busName);
 			start();
 		}
 	}
 
 	// ******* size
-	// *******************************************************
+	// *************************************************************************
 	public int size() {
 		return miners.size();
 	}
 
 	// ******* elementAt
-	// *******************************************************
+	// *************************************************************************
 	public BTCMiner elementAt(int i) {
 		return miners.elementAt(i);
 	}
 
 	// ******* find
-	// *******************************************************
+	// *************************************************************************
 	public BTCMiner find(int dn) {
 		for (int i = 0; i < miners.size(); i++) {
-			if ((miners.elementAt(i).ztex().dev().dev().getDevnum() == dn))
+			if ((miners.elementAt(i).ztex().dev().dev().getDevnum() == dn)) {
 				return miners.elementAt(i);
+			}
 		}
 		return null;
 	}
 
 	// ******* busName
-	// *******************************************************
+	// *************************************************************************
 	public String busName() {
 		return busName;
 	}
 
 	// ******* running
-	// *******************************************************
+	// *************************************************************************
 	public boolean running() {
 		return pollLoop != null;
 	}
 
 	// ******* run
-	// *******************************************************
+	// *************************************************************************
 	public void run() {
 		pollLoop = new PollLoop(miners);
 		pollLoop.run();
@@ -290,10 +576,11 @@ class BTCMinerThread extends Thread {
 	}
 
 	// ******* printInfo
-	// *******************************************************
+	// *************************************************************************
 	public void printInfo() {
-		if (pollLoop != null)
+		if (pollLoop != null) {
 			pollLoop.printInfo(busName);
+		}
 	}
 }
 
@@ -302,19 +589,57 @@ class BTCMinerThread extends Thread {
 // *****************************************************************************
 class BTCMinerCluster {
 	public static int maxDevicesPerThread = 10;
+	public static boolean verbose = false;
+	public static long autoResetInterval = 0;
 
 	private Vector<BTCMinerThread> threads = new Vector<BTCMinerThread>();
 	private Vector<BTCMiner> allMiners = new Vector<BTCMiner>();
 
-	// ******* constructor
-	// *******************************************************
-	public BTCMinerCluster(boolean verbose, long autoResetInterval) {
+	// ******* totalHashrate
+	// *************************************************************************
+	public double totalHashrate() {
+		double h = 0.0;
+		for (int i = 0; i < allMiners.size(); i++) {
+			BTCMiner m = allMiners.elementAt(i);
+			h += m.totalHashRate();
+		}
+		return h;
+	}
+
+	// ******* submittedHashrate
+	// *************************************************************************
+	public double submittedHashrate() {
+		double h = 0.0;
+		for (int i = 0; i < allMiners.size(); i++) {
+			BTCMiner m = allMiners.elementAt(i);
+			h += m.submittedHashRate();
+		}
+		return h;
+	}
+
+	// ******* getMinerInfo
+	// *************************************************************************
+	public String getMinerInfo(int index) {
+		if (index < 0 || index >= allMiners.size()) {
+			return null;
+		}
+		BTCMiner m = allMiners.elementAt(index);
+		return m.getInfo();
+	}
+
+	// ******* Constructor
+	// *************************************************************************
+	public BTCMinerCluster() {
+		scan(verbose);
+	}
+
+	// ******* run
+	// *************************************************************************
+	public void run() {
 		final long infoInterval = 300000;
 
-		scan(verbose);
-
 		long nextInfoTime = new Date().getTime() + 60000;
-		long nextResetTime = new Date().getTime() + (3 * 60 * 1000);	// first auto reset after 3 minutes
+		long nextResetTime = new Date().getTime() + (3 * 60 * 1000); // first auto reset after 3 minutes
 
 		boolean quit = false;
 		while (threads.size() > 0 && !quit) {
@@ -324,8 +649,9 @@ class BTCMinerCluster {
 			}
 
 			BTCMiner.newBlockMonitor.print();
-			for (int i = 0; i < allMiners.size(); i++)
+			for (int i = 0; i < allMiners.size(); i++) {
 				allMiners.elementAt(i).print();
+			}
 
 			if (new Date().getTime() > nextInfoTime) {
 				double d = 0.0;
@@ -336,12 +662,14 @@ class BTCMinerCluster {
 					d += m.submittedHashRate();
 					e += m.totalHashRate();
 				}
-				for (int i = 0; i < threads.size(); i++)
-					threads.elementAt(i).printInfo();
 
-				BTCMiner.printMsg("Total hash rate: " + String.format("%.1f", e) + " MH/s");
-				BTCMiner.printMsg("Total submitted hash rate: " + String.format("%.1f", d) + " MH/s");
-				BTCMiner.printMsg(" -------- ");
+				for ( int i=0; i<threads.size(); i++ ) {
+					threads.elementAt(i).printInfo();
+				}
+
+				BTCMiner.printMsg2("Total hash rate: " + String.format("%.1f", e) + " MH/s");
+				BTCMiner.printMsg2("Total submitted hash rate: " + String.format("%.1f", d) + " MH/s");
+				BTCMiner.printMsg2(" -------- ");
 				nextInfoTime = new Date().getTime() + infoInterval;
 			}
 
@@ -349,14 +677,14 @@ class BTCMinerCluster {
 				for (int i = allMiners.size() - 1; i >= 0; i--) {
 					allMiners.elementAt(i).resetCounters();
 				}
-				BTCMiner.printMsg("Auto reset all performance end error counters.");
+				BTCMiner.printMsg2("Auto reset all performance end error counters.");
 				nextResetTime = new Date().getTime() + autoResetInterval;
 			}
- 
+
 			for (int i = threads.size() - 1; i >= 0; i--) {
 				BTCMinerThread t = threads.elementAt(i);
 				if (!t.running()) {
-					BTCMiner.printMsg("Stopped thread for bus " + t.busName());
+					BTCMiner.printMsg2("Stopped thread for bus " + t.busName());
 					threads.removeElementAt(i);
 				}
 			}
@@ -365,13 +693,24 @@ class BTCMinerCluster {
 				StringBuffer sb = new StringBuffer();
 				while (System.in.available() > 0) {
 					int j = System.in.read();
-					if (j > 32)
+					if (j > 32) {
 						sb.append((char) j);
+					}
 				}
+
+				if (sb.length() == 0 && BTCMiner.in2 != null) {
+					while (BTCMiner.in2.available() > 0) {
+						int j = BTCMiner.in2.read();
+						if (j > 32) {
+							sb.append((char) j);
+						}
+					}
+				}
+
 				String cmd = sb.toString();
+
 				if (cmd.length() < 1) {
-				} else if (cmd.equalsIgnoreCase("q")
-						|| cmd.equalsIgnoreCase("quit")) {
+				} else if (cmd.equalsIgnoreCase("q") || cmd.equalsIgnoreCase("quit")) {
 					for (int i = allMiners.size() - 1; i >= 0; i--) {
 						allMiners.elementAt(i).suspend();
 						try {
@@ -386,46 +725,50 @@ class BTCMinerCluster {
 					long t = new Date().getTime();
 					int j = 0;
 					for (int i = allMiners.size() - 1; i >= 0; i--) {
-						if (allMiners.elementAt(i).suspend())
+						if (allMiners.elementAt(i).suspend()) {
 							j++;
+						}
 						allMiners.elementAt(i).startTimeAdjust = t;
 						try {
 							Thread.sleep(10);
 						} catch (InterruptedException e) {
 						}
 					}
-					BTCMiner.printMsg("Suspended " + j + " of " + allMiners.size() + " miners. Enter `r' to resume.");
+					BTCMiner.printMsg2("Suspended " + j + " of " + allMiners.size() + " miners. Enter `r' to resume.");
 				} else if (cmd.equalsIgnoreCase("c") || cmd.equalsIgnoreCase("counter_reset")) {
 					for (int i = allMiners.size() - 1; i >= 0; i--) {
 						allMiners.elementAt(i).resetCounters();
 					}
-					BTCMiner.printMsg("Reset all performance end error counters.");
+					BTCMiner.printMsg2("Reset all performance end error counters.");
+				} else if (cmd.equalsIgnoreCase("i") || cmd.equalsIgnoreCase("info")) {
+					nextInfoTime = 0;
 				} else if (cmd.equalsIgnoreCase("h") || cmd.equalsIgnoreCase("help")) {
-					System.out.println("q(uit)          Exit BTCMiner");
-					System.out.println("h(elp)          Print theis help");
-					System.out.println("r(escan)        Rescan bus");
-					System.out.println("c(ounter_reset) Reset performance and error counters");
-					System.out.println("s(uspend)       Suspend cluster");
-				} else
-					System.out.println("Invalid command: `" + cmd + "'");
-
+					System.out.println("q(uit)           Exit BTCMiner");
+					System.out.println("h(elp)	         Print this help");
+					System.out.println("r(escan)         Rescan bus");
+					System.out.println("c(ounter_reset)  Reset performance and error counters");
+					System.out.println("s(uspend)        Suspend cluster");
+					System.out.println("i(nfo)           Print cluster informations");
+				} else {
+					System.out.println("Invalid command: `" + cmd + "', enter `h' for help");
+				}
 			} catch (Exception e) {
 			}
-
 		}
 		// BTCMiner.newBlockMonitor.running = false;
 	}
 
 	// ******* add
-	// *******************************************************
+	// *************************************************************************
 	private void add(BTCMiner m) {
 		int i = 0, j = 0;
 		String bn = m.ztex().dev().dev().getBus().getDirname() + "-" + j;
 		while (i < threads.size()) {
 			BTCMinerThread t = threads.elementAt(i);
 			if (bn.equalsIgnoreCase(threads.elementAt(i).busName())) {
-				if (t.size() < maxDevicesPerThread)
+				if (t.size() < maxDevicesPerThread) {
 					break;
+				}
 				j++;
 				i = 0;
 				bn = m.ztex().dev().dev().getBus().getDirname() + "-" + j;
@@ -434,35 +777,38 @@ class BTCMinerCluster {
 			}
 		}
 
-		if (i >= threads.size())
+		if (i >= threads.size()) {
 			threads.add(new BTCMinerThread(bn));
+		}
 		threads.elementAt(i).add(m);
 	}
 
 	// ******* find
-	// *******************************************************
+	// *************************************************************************
 	private BTCMiner find(ZtexDevice1 dev) {
 		int dn = dev.dev().getDevnum();
 		String bn = dev.dev().getBus().getDirname();
 		for (int i = threads.size() - 1; i >= 0; i--) {
 			BTCMiner m = threads.elementAt(i).find(dn);
-			if (m != null && bn.equals(m.ztex().dev().dev().getBus().getDirname()))
+			if (m != null && bn.equals(m.ztex().dev().dev().getBus().getDirname())) {
 				return m;
+			}
 		}
 		return null;
 	}
 
 	// ******* insertIntoAllMiners
-	// *******************************************************
+	// *************************************************************************
 	private void insertIntoAllMiners(BTCMiner m) {
 		int j = 0;
-		while (j < allMiners.size() && m.name.compareTo(allMiners.elementAt(j).name) >= 0)
+		while (j < allMiners.size() && m.name.compareTo(allMiners.elementAt(j).name) >= 0) {
 			j++;
+		}
 		allMiners.insertElementAt(m, j);
 	}
 
 	// ******* scan
-	// *******************************************************
+	// *************************************************************************
 	private void scan(boolean verbose) {
 		long t = new Date().getTime();
 
@@ -479,15 +825,15 @@ class BTCMinerCluster {
 						Thread.sleep(20);
 					} catch (InterruptedException e) {
 					}
-					BTCMiner.printMsg(m.name + ": resuming");
+					BTCMiner.printMsg2(m.name + ": resuming");
 				} else {
 					m.startTimeAdjust = t;
-					BTCMiner.printMsg(m.name + ": already running");
+					BTCMiner.printMsg2(m.name + ": already running");
 				}
 			}
 		}
 
-		BTCMiner.printMsg("\n(Re)Scanning bus ... ");
+		BTCMiner.printMsg2("\n(Re)Scanning bus ... ");
 
 		PollLoop.scanMode = true;
 
@@ -497,10 +843,10 @@ class BTCMinerCluster {
 		for (int i = 0; i < bus.numberOfDevices(); i++) {
 			try {
 				ZtexDevice1 dev = bus.device(i);
-				if (dev.productId(0) != 10 || dev.productId(2) > 1)
+				if (dev.productId(0) != 10 || dev.productId(2) > 1) {
 					break;
-
-				if (BTCMiner.filterSN == null || dev.snString().substring(0, BTCMiner.filterSN.length()).equals( BTCMiner.filterSN)) {
+				}
+				if (BTCMiner.filterSN == null || dev.snString().substring(0, BTCMiner.filterSN.length()).equals(BTCMiner.filterSN)) {
 					k += 1;
 					BTCMiner m = find(dev);
 					if (m == null) {
@@ -529,22 +875,22 @@ class BTCMinerCluster {
 			System.err.println("No devices found. At least one device has to be connected.");
 			System.exit(0);
 		}
-		BTCMiner.printMsg("" + l + " new devices found.");
+		BTCMiner.printMsg2("" + l + " new devices found.");
 
 		t = new Date().getTime();
-		for (int i = 0; i < allMiners.size(); i++)
+		for (int i = 0; i < allMiners.size(); i++) {
 			allMiners.elementAt(i).startTime += t - allMiners.elementAt(i).startTimeAdjust;
-
+		}
 		PollLoop.scanMode = false;
 
-		BTCMiner.printMsg("\nSummary: ");
-		for (int i = 0; i < threads.size(); i++)
-			BTCMiner.printMsg("  Bus " + threads.elementAt(i).busName() + "\t: " + threads.elementAt(i).size() + " miners");
-		BTCMiner.printMsg("  Total  \t: " + allMiners.size() + " miners\n");
-		BTCMiner.printMsg("\nDisconnect all devices or enter `q' for exit. Enter `h' for help.\n");
+		BTCMiner.printMsg2("\nSummary: ");
+		for (int i = 0; i < threads.size(); i++) {
+			BTCMiner.printMsg2("  Bus " + threads.elementAt(i).busName() + "\t: " + threads.elementAt(i).size() + " miners");
+		}
+		BTCMiner.printMsg2("  Total  \t: " + allMiners.size() + " miners\n");
+		BTCMiner.printMsg2("\nDisconnect all devices or enter `q' for exit. Enter `h' for help.\n");
 
 		BTCMiner.connectionEffort = 1.0 + Math.exp((1.0 - Math.sqrt(Math.min(allMiners.size(), maxDevicesPerThread) * allMiners.size())) / 13.0);
-		// System.out.println( BTCMiner.connectionEffort );
 	}
 }
 
@@ -555,6 +901,8 @@ class LogString {
 	public Date time;
 	public String msg;
 
+	// ******* Constructor
+	// *************************************************************************
 	public LogString(String s) {
 		time = new Date();
 		msg = s;
@@ -573,14 +921,14 @@ class PollLoop {
 	private Vector<BTCMiner> v;
 	public static final long minQueryInterval = 250;
 
-	// ******* constructor
-	// *******************************************************
+	// ******* Constructor
+	// *************************************************************************
 	public PollLoop(Vector<BTCMiner> pv) {
 		v = pv;
 	}
 
 	// ******* run
-	// *******************************************************
+	// *************************************************************************
 	public void run() {
 		int maxIoErrorCount = (int) Math.round((BTCMiner.rpcCount > 1 ? 2 : 4) * BTCMiner.connectionEffort);
 		int ioDisableTime = BTCMiner.rpcCount > 1 ? 60 : 30;
@@ -613,6 +961,12 @@ class PollLoop {
 								m.ioErrorCount[m.rpcNum] = 0;
 							}
 						} catch (ParserException e) {
+							m.msg("Error: " + e.getLocalizedMessage() + ": Disabling URL " + m.rpcurl[m.rpcNum] + " for 60s");
+							m.disableTime[m.rpcNum] = new Date().getTime() + 60000;
+						} catch (NumberFormatException e) {
+							m.msg("Error: " + e.getLocalizedMessage() + ": Disabling URL " + m.rpcurl[m.rpcNum] + " for 60s");
+							m.disableTime[m.rpcNum] = new Date().getTime() + 60000;
+						} catch (IndexOutOfBoundsException e) {
 							m.msg("Error: " + e.getLocalizedMessage() + ": Disabling URL " + m.rpcurl[m.rpcNum] + " for 60s");
 							m.disableTime[m.rpcNum] = new Date().getTime() + 60000;
 						} catch (Exception e) {
@@ -648,7 +1002,7 @@ class PollLoop {
 	}
 
 	// ******* printInfo
-	// *******************************************************
+	// *************************************************************************
 	public void printInfo(String name) {
 		int oc = 0;
 		double gt = 0.0, gtw = 0.0, st = 0.0, stw = 0.0;
@@ -664,10 +1018,10 @@ class PollLoop {
 			gtw += m.getTimeW;
 		}
 
-		BTCMiner.printMsg(name +
-			": poll loop time: " + Math.round((usbTime + networkTime) / timeW) + "ms (USB: " + Math.round(usbTime / timeW) + "ms network: " + Math.round(networkTime / timeW) + "ms)   getwork time: " + Math.round(gt / gtw) + "ms  submit time: " + Math.round(st / stw) + "ms");
-		if (oc > 0)
+		BTCMiner.printMsg2(name + ": poll loop time: " + Math.round((usbTime + networkTime) / timeW) + "ms (USB: " + Math.round(usbTime / timeW) + "ms network: " + Math.round(networkTime / timeW) + "ms)   getwork time: " + Math.round(gt / gtw) + "ms  submit time: " + Math.round(st / stw) + "ms");
+		if (oc > 0) {
 			BTCMiner.printMsg(name + ": Warning: " + oc + " overflows occured. This is usually caused by a slow network connection.");
+		}
 	}
 }
 
@@ -677,26 +1031,39 @@ class PollLoop {
 class BTCMiner implements MsgObj {
 
 	// ******* static methods
-	// *******************************************************
+	// *************************************************************************
+	static BTCMinerCluster cluster = null;
+	static String clusterId = "default";
 	static final int maxRpcCount = 32;
 	static String[] rpcurl = new String[maxRpcCount];
 	static String[] rpcuser = new String[maxRpcCount];
 	static String[] rpcpassw = new String[maxRpcCount];
-	static int rpcCount = 1;
+	static String[] rpcname = new String[maxRpcCount];
+	static boolean[] rpcstate = new boolean[maxRpcCount];
+	static int[] rpcSharesGetwork = new int[maxRpcCount];
+	static int[] rpcSharesAccepted = new int[maxRpcCount];
+	static int[] rpcSharesRejected = new int[maxRpcCount];
+	static int rpcCount = 0;
+	static int rpcFirstBackup = 0;
 
 	static String longPollURL = null;
 	static String longPollUser = "";
 	static String longPollPassw = "";
+	static long disableLPTime = 0;
 
 	static int bcid = -1;
 
 	static String firmwareFile = null;
 	static boolean printBus = false;
 
-	public final static SimpleDateFormat dateFormat = new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ss");
+	public final static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
 
 	static PrintStream logFile = null;
+	static PrintStream logFile2 = null;
 	static PrintStream blkLogFile = null;
+
+	static InputStream in2 = null;
+	static String in2FileName = null;
 
 	static double connectionEffort = 2.0;
 
@@ -706,27 +1073,42 @@ class BTCMiner implements MsgObj {
 
 	static double overheatThreshold = 0.04;
 
+	static double maxMaxErrorRate = 0.05;
+
 	static String filterSN = null;
 
-	public static final String[] dummyFirmwareNames = {
-		"USB-FPGA Module 1.15d (default)",
-		"USB-FPGA Module 1.15x (default)",
-		"USB-FPGA Module 1.15y (default)" };
+	public static final String[] dummyFirmwareNames = { "USB-FPGA Module 1.15d (default)", "USB-FPGA Module 1.15x (default)", "USB-FPGA Module 1.15y (default)" };
 
 	public static final int[] defaultFirmwarePID1 = { 13, 13, 15 };
 
 	public static final String[] firmwareFiles = { "ztex_ufm1_15d4.ihx", "ztex_ufm1_15d4.ihx", "ztex_ufm1_15y1.ihx" };
 
+	public static final byte[] sha256_init_state = hexStrToData("67e6096a85ae67bb72f36e3c3af54fa57f520e518c68059babd9831f19cde05b");
+	public static final byte[] sha256_pad1 = hexStrToData("000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000");
+
 	// ******* printMsg
-	// *******************************************************
+	// *************************************************************************
 	public static void printMsg(String msg) {
 		System.out.println(msg);
-		if (logFile != null)
+		if (logFile != null) {
 			logFile.println(dateFormat.format(new Date()) + ": " + msg);
+		}
+		if (logFile2 != null) {
+			logFile2.println(dateFormat.format(new Date()) + ": " + msg);
+		}
+	}
+
+	// ******* printMsg2
+	// *************************************************************************
+	public static void printMsg2(String msg) {
+		System.out.println(msg);
+		if (logFile != null) {
+			logFile.println(dateFormat.format(new Date()) + ": " + msg);
+		}
 	}
 
 	// ******* encodeBase64
-	// *******************************************************
+	// *************************************************************************
 	public static String encodeBase64(String s) {
 		return encodeBase64(s.getBytes());
 	}
@@ -788,10 +1170,11 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* hexStrToData
-	// *******************************************************
+	// *************************************************************************
 	public static byte[] hexStrToData(String str) throws NumberFormatException {
-		if (str.length() % 2 != 0)
+		if (str.length() % 2 != 0) {
 			throw new NumberFormatException("Invalid length of string");
+		}
 		byte[] buf = new byte[str.length() >> 1];
 		for (int i = 0; i < buf.length; i++) {
 			buf[i] = (byte) Integer.parseInt(str.substring(i * 2, i * 2 + 2), 16);
@@ -799,18 +1182,17 @@ class BTCMiner implements MsgObj {
 		return buf;
 	}
 
-	public static void hexStrToData(String str, byte[] buf)
-			throws NumberFormatException {
-		if (str.length() < buf.length * 2)
+	public static void hexStrToData(String str, byte[] buf) throws NumberFormatException {
+		if (str.length() < buf.length * 2) {
 			throw new NumberFormatException("Invalid length of string");
+		}
 		for (int i = 0; i < buf.length; i++) {
-			buf[i] = (byte) Integer.parseInt(str.substring(i * 2, i * 2 + 2),
-					16);
+			buf[i] = (byte) Integer.parseInt(str.substring(i * 2, i * 2 + 2), 16);
 		}
 	}
 
 	// ******* dataToHexStr
-	// *******************************************************
+	// *************************************************************************
 	public static String dataToHexStr(byte[] data) {
 		final char hexchars[] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
 		char[] buf = new char[data.length * 2];
@@ -822,15 +1204,16 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* dataToInt
-	// *******************************************************
+	// *************************************************************************
 	public static int dataToInt(byte[] buf, int offs) {
-		if (offs + 4 > buf.length)
+		if (offs + 4 > buf.length) {
 			throw new NumberFormatException("Invalid length of data");
+		}
 		return (buf[offs + 0] & 255) | ((buf[offs + 1] & 255) << 8) | ((buf[offs + 2] & 255) << 16) | ((buf[offs + 3] & 255) << 24);
 	}
 
 	// ******* intToData
-	// *******************************************************
+	// *************************************************************************
 	public static byte[] intToData(int n) {
 		byte[] buf = new byte[4];
 		buf[0] = (byte) (n & 255);
@@ -840,84 +1223,102 @@ class BTCMiner implements MsgObj {
 		return buf;
 	}
 
+	public static void intToData(int n, byte[] buf, int offs) {
+		buf[offs + 0] = (byte) (n & 255);
+		buf[offs + 1] = (byte) ((n >> 8) & 255);
+		buf[offs + 2] = (byte) ((n >> 16) & 255);
+		buf[offs + 3] = (byte) ((n >> 24) & 255);
+	}
+
 	// ******* intToHexStr
-	// *******************************************************
+	// *************************************************************************
 	public static String intToHexStr(int n) {
 		return dataToHexStr(reverse(intToData(n)));
 	}
 
 	// ******* reverse
-	// *******************************************************
+	// *************************************************************************
 	public static byte[] reverse(byte[] data) {
 		byte[] buf = new byte[data.length];
-		for (int i = 0; i < data.length; i++)
+		for (int i = 0; i < data.length; i++) {
 			buf[data.length - i - 1] = data[i];
+		}
 		return buf;
 	}
 
 	// ******* jsonParse
-	// *******************************************************
+	// *************************************************************************
 	// does not work if parameter name is a part of a parameter value
 	public static String jsonParse(String response, String parameter) throws ParserException {
 		int lp = parameter.length();
 		int i = 0;
-		while (i + lp < response.length() && !parameter.equalsIgnoreCase(response.substring(i, i + lp)))
+		while (i + lp < response.length() && !parameter.equalsIgnoreCase(response.substring(i, i + lp))) {
 			i++;
+		}
 		i += lp;
-		if (i >= response.length())
+		if (i >= response.length()) {
 			throw new ParserException("jsonParse: Parameter `" + parameter + "' not found");
-		while (i < response.length() && response.charAt(i) != ':')
+		}
+		while (i < response.length() && response.charAt(i) != ':') {
 			i++;
+		}
 		i += 1;
-		while (i < response.length() && (byte) response.charAt(i) <= 32)
+		while (i < response.length() && (byte) response.charAt(i) <= 32) {
 			i++;
-		if (i >= response.length())
+		}
+		if (i >= response.length()) {
 			throw new ParserException("jsonParse: Value expected after `" + parameter + "'");
+		}
 		int j = i;
 		if (i < response.length() && response.charAt(i) == '"') {
 			i += 1;
 			j = i;
-			while (j < response.length() && response.charAt(j) != '"')
+			while (j < response.length() && response.charAt(j) != '"') {
 				j++;
-			if (j >= response.length())
+			}
+			if (j >= response.length()) {
 				throw new ParserException("jsonParse: No closing `\"' found for value of paramter `" + parameter + "'");
+			}
 		} else {
-			while (j < response.length() && response.charAt(j) != ',' && response.charAt(j) != /* { */'}')
+			while (j < response.length() && response.charAt(j) != ',' && response.charAt(j) != /* { */'}' && response.charAt(j) != '\n') {
 				j++;
+			}
 		}
 		return response.substring(i, j);
 	}
 
 	// ******* checkSnString
-	// *******************************************************
+	// *************************************************************************
 	// make sure that snString is 10 chars long
 	public static String checkSnString(String snString) {
 		if (snString.length() > 10) {
 			snString = snString.substring(0, 10);
 			System.err.println("Serial number too long (max. 10 characters), truncated to `" + snString + "'");
 		}
-		while (snString.length() < 10)
+		while (snString.length() < 10) {
 			snString = '0' + snString;
+		}
 		return snString;
 	}
 
 	// ******* getType
-	// *******************************************************
+	// *************************************************************************
 	private static String getType(ZtexDevice1 pDev) {
 		byte[] buf = new byte[64];
 		try {
 			Ztex1v1 ztex = new Ztex1v1(pDev);
 			ztex.vendorRequest2(0x82, "Read descriptor", 0, 0, buf, 64);
-			if (buf[0] < 1 || buf[0] > 5)
+			if (buf[0] < 1 || buf[0] > 5) {
 				throw new FirmwareException("Invalid BTCMiner descriptor version");
-
+			}
 			int i0 = buf[0] > 4 ? 11 : (buf[0] > 2 ? 10 : 8);
 			int i = i0;
-			while (i < 64 && buf[i] != 0)
+			while (i < 64 && buf[i] != 0) {
 				i++;
-			if (i < i0 + 1)
+			}
+			if (i < i0 + 1) {
 				throw new FirmwareException("Invalid bitstream file name");
-
+			}
 			return new String(buf, i0, i - i0);
 		} catch (Exception e) {
 			System.out.println("Warning: " + e.getLocalizedMessage());
@@ -925,13 +1326,70 @@ class BTCMiner implements MsgObj {
 		return null;
 	}
 
+	// ******* sha256_transform
+	// *************************************************************************
+	public static void sha256_transform(byte[] state, int state_offs, byte[] data, int data_offs, byte[] out, int out_offs) throws NumberFormatException {
+		if (state.length < state_offs + 32) {
+			throw new NumberFormatException("Invalid length of state");
+		}
+		if (data.length < data_offs + 64) {
+			throw new NumberFormatException("Invalid length of data");
+		}
+		if (out.length < out_offs + 32) {
+			throw new NumberFormatException("Invalid length of out");
+		}
+
+		final int[] k = { 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 };
+
+		int A = dataToInt(state, state_offs + 0);
+		int B = dataToInt(state, state_offs + 4);
+		int C = dataToInt(state, state_offs + 8);
+		int D = dataToInt(state, state_offs + 12);
+		int E = dataToInt(state, state_offs + 16);
+		int F = dataToInt(state, state_offs + 20);
+		int G = dataToInt(state, state_offs + 24);
+		int H = dataToInt(state, state_offs + 28);
+		int T, T2;
+		int[] wBuf = new int[64];
+
+		for (int i = 0; i < 16; i++) {
+			wBuf[i] = dataToInt(data, data_offs + 4 * i);
+		}
+		for (int i = 16; i < 64; i++) {
+			T = wBuf[i - 2];
+			T2 = wBuf[i - 15];
+			wBuf[i] = (((T >>> 17) | (T << 15)) ^ ((T >>> 19) | (T << 13)) ^ (T >>> 10)) + wBuf[i - 7] + (((T2 >>> 7) | (T2 << 25)) ^ ((T2 >>> 18) | (T2 << 14)) ^ (T2 >>> 3)) + wBuf[i - 16];
+		}
+
+		for (int i = 0; i < 64; i++) {
+			T = H + (((E >>> 6) | (E << 26)) ^ ((E >>> 11) | (E << 21)) ^ ((E >>> 25) | (E << 7))) + ((E & F) ^ (~E & G)) + k[i] + wBuf[i];
+			T2 = (((A >>> 2) | (A << 30)) ^ ((A >>> 13) | (A << 19)) ^ ((A >>> 22) | (A << 10))) + ((A & B) ^ (A & C) ^ (B & C));
+			H = G;
+			G = F;
+			F = E;
+			E = D + T;
+			D = C;
+			C = B;
+			B = A;
+			A = T + T2;
+		}
+
+		intToData(A + dataToInt(state, state_offs + 0), out, out_offs + 0);
+		intToData(B + dataToInt(state, state_offs + 4), out, out_offs + 4);
+		intToData(C + dataToInt(state, state_offs + 8), out, out_offs + 8);
+		intToData(D + dataToInt(state, state_offs + 12), out, out_offs + 12);
+		intToData(E + dataToInt(state, state_offs + 16), out, out_offs + 16);
+		intToData(F + dataToInt(state, state_offs + 20), out, out_offs + 20);
+		intToData(G + dataToInt(state, state_offs + 24), out, out_offs + 24);
+		intToData(H + dataToInt(state, state_offs + 28), out, out_offs + 28);
+	}
+
 	// ******* non-static methods
-	// *******************************************************
+	// *************************************************************************
 	private Ztex1v1 ztex = null;
 	private int fpgaNum = 0;
 
-	public int numNonces, offsNonces, freqM, freqMDefault, freqMaxM,
-			extraSolutions;
+	public int numNonces, offsNonces, freqM, freqMDefault, freqMaxM, extraSolutions;
 	public double freqM1;
 	public double hashesPerClock;
 	private String bitFileName = null;
@@ -941,6 +1399,7 @@ class BTCMiner implements MsgObj {
 
 	public int ioErrorCount[] = new int[maxRpcCount];
 	public long disableTime[] = new long[maxRpcCount];
+	private String lastRejectReason = "";
 
 	public int rpcNum = 0;
 	private int prevRpcNum = 0;
@@ -950,12 +1409,11 @@ class BTCMiner implements MsgObj {
 
 	public Vector<LogString> logBuf = new Vector<LogString>();
 
-	private byte[] blockBuf = new byte[80];
 	private byte[] dataBuf = new byte[128];
 	private byte[] dataBuf2 = new byte[128];
 	private byte[] midstateBuf = new byte[32];
 	private byte[] sendBuf = new byte[44];
-	private byte[] hashBuf = new byte[32];
+	private byte[] hashBuf = hexStrToData("00000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000010000");
 
 	private int newCount = 0;
 
@@ -987,7 +1445,6 @@ class BTCMiner implements MsgObj {
 	public double[] errorWeight = new double[256];
 	public double[] errorRate = new double[256];
 	public double[] maxErrorRate = new double[256];
-	public final double maxMaxErrorRate = 0.05;
 	public final double errorHysteresis = 0.1; // in frequency steps
 
 	private double maxHashRate = 0;
@@ -995,9 +1452,10 @@ class BTCMiner implements MsgObj {
 	private int numberOfFpgas = 0;
 	private int[] fpgaMap;
 
-	// ******* BTCMiner
-	// *******************************************************
+	// ******* Constructor
+	// *************************************************************************
 	public BTCMiner(ZtexDevice1 pDev, String firmwareFile, boolean v) throws UsbException, FirmwareException, NoSuchAlgorithmException {
+
 		digest = MessageDigest.getInstance("SHA-256");
 		verbose = v;
 
@@ -1006,9 +1464,11 @@ class BTCMiner implements MsgObj {
 
 		String snString = null;
 		if ((pDev.productId(2) == 0) && (firmwareFile == null)) {
-			for (int j = 0; j < defaultFirmwarePID1.length; j++)
-				if (defaultFirmwarePID1[j] == pDev.productId(1) && pDev.productString().equals(dummyFirmwareNames[j]))
+			for (int j = 0; j < defaultFirmwarePID1.length; j++) {
+				if (defaultFirmwarePID1[j] == pDev.productId(1) && pDev.productString().equals(dummyFirmwareNames[j])) {
 					firmwareFile = firmwareFiles[j];
+				}
+			}
 			if (firmwareFile != null) {
 				msg("Using firmware `" + firmwareFile + "'" + " for `" + pDev.productString() + "'");
 				snString = pDev.snString();
@@ -1018,25 +1478,17 @@ class BTCMiner implements MsgObj {
 		if (firmwareFile != null) {
 			try {
 				ZtexIhxFile1 ihxFile = new ZtexIhxFile1(firmwareFile);
-				if (snString != null)
+				if (snString != null) {
 					ihxFile.setSnString(snString);
+				}
 				ztex.uploadFirmware(ihxFile, false);
 			} catch (Exception e) {
 				throw new FirmwareException(e.getLocalizedMessage());
 			}
 		}
 
-		if (!ztex.valid() ||
-		    ztex.dev().productId(0) != 10 ||
-		    ztex.dev().productId(2) != 1)
+		if (!ztex.valid() || ztex.dev().productId(0) != 10 || ztex.dev().productId(2) != 1) {
 			throw new FirmwareException("Wrong or no firmware");
-
-		try {
-			byte buf[] = new byte[6];
-			ztex.macRead(buf);
-			msg("MAC address: " + dataToHexStr(buf));
-		} catch (Exception e) {
-			msg("No mac address support");
 		}
 
 		getDescriptor();
@@ -1047,9 +1499,15 @@ class BTCMiner implements MsgObj {
 
 		name = bitFileName + "-" + ztex.dev().snString();
 		msg("New device: " + descriptorInfo());
+		try {
+			byte buf[] = new byte[6];
+			ztex.macRead(buf);
+			msg("MAC address: " + dataToHexStr(buf));
+		} catch (Exception e) {
+			msg("No mac address support");
+		}
 
-		// long d = Math.round( 2500.0 / (freqM1 * (freqMaxM+1) * numNonces) *
-		// 1000.0 );
+		// long d = Math.round( 2500.0 / (freqM1 * (freqMaxM+1) * numNonces) * 1000.0 );
 		// if ( d < maxPollInterval ) maxPollInterval=d;
 
 		numberOfFpgas = 0;
@@ -1073,8 +1531,9 @@ class BTCMiner implements MsgObj {
 			throw new FirmwareException(e.getLocalizedMessage());
 		}
 
-		if (numberOfFpgas < 1)
+		if (numberOfFpgas < 1) {
 			throw new FirmwareException("No FPGA's found");
+		}
 
 		fpgaNum = fpgaMap[0];
 		name += "-" + (fpgaNum + 1);
@@ -1096,6 +1555,9 @@ class BTCMiner implements MsgObj {
 		startTimeAdjust = startTime;
 
 		for (int i = 0; i < rpcCount; i++) {
+			rpcSharesGetwork[i] = 0;
+			rpcSharesAccepted[i] = 0;
+			rpcSharesRejected[i] = 0;
 			disableTime[i] = 0;
 			ioErrorCount[i] = 0;
 		}
@@ -1103,7 +1565,6 @@ class BTCMiner implements MsgObj {
 		if (newBlockMonitor == null) {
 			newBlockMonitor = new NewBlockMonitor();
 		}
-
 	}
 
 	public BTCMiner(Ztex1v1 pZtex, int pFpgaNum, boolean v) throws UsbException, FirmwareException, NoSuchAlgorithmException {
@@ -1113,11 +1574,9 @@ class BTCMiner implements MsgObj {
 		ztex = pZtex;
 		fpgaNum = pFpgaNum;
 
-		if (!ztex.valid() ||
-		    ztex.dev().productId(0) != 10 ||
-		    ztex.dev().productId(2) != 1 ||
-		    (ztex.dev().productId(3) < 1 && ztex.dev().productId(3) > 2))
+		if (!ztex.valid() || ztex.dev().productId(0) != 10 || ztex.dev().productId(2) != 1 || (ztex.dev().productId(3) < 1 && ztex.dev().productId(3) > 2)) {
 			throw new FirmwareException("Wrong or no firmware");
+		}
 
 		getDescriptor();
 
@@ -1126,7 +1585,6 @@ class BTCMiner implements MsgObj {
 		hash7 = new int[numNonces];
 
 		name = bitFileName + "-" + ztex.dev().snString() + "-" + (fpgaNum + 1);
-
 		try {
 			msg("New FPGA");
 			freqM = -1;
@@ -1152,43 +1610,41 @@ class BTCMiner implements MsgObj {
 			disableTime[i] = 0;
 			ioErrorCount[i] = 0;
 		}
-
 	}
 
 	// ******* ztex
-	// *******************************************************
+	// *************************************************************************
 	public Ztex1v1 ztex() {
 		return ztex;
 	}
 
 	// ******* numberofFpgas
-	// *******************************************************
+	// *************************************************************************
 	public int numberOfFpgas() {
 		return numberOfFpgas;
 	}
 
 	// ******* selectFpga
-	// *******************************************************
+	// *************************************************************************
 	public void selectFpga() throws UsbException, InvalidFirmwareException, IndexOutOfBoundsException {
 		ztex.selectFpga(fpgaNum);
 	}
 
 	// ******* fpgaNum
-	// *******************************************************
+	// *************************************************************************
 	public int fpgaNum() {
 		return fpgaNum;
 	}
 
-	public int fpgaNum(int n) throws IndexOutOfBoundsException { // only valid
-																	// for root
-																	// miner
-		if (n < 0 || n >= numberOfFpgas)
+	public int fpgaNum(int n) throws IndexOutOfBoundsException { // only valid for root miner
+		if (n < 0 || n >= numberOfFpgas) {
 			throw new IndexOutOfBoundsException("fpgaNum: Invalid FPGA number");
+		}
 		return fpgaMap[n];
 	}
 
 	// ******* msg
-	// *******************************************************
+	// *************************************************************************
 	public void msg(String s) {
 		if (clusterMode) {
 			synchronized (logBuf) {
@@ -1200,14 +1656,15 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* dmsg
-	// *******************************************************
+	// *************************************************************************
 	void dmsg(String s) {
-		if (verbose)
+		if (verbose) {
 			msg(s);
+		}
 	}
 
 	// ******* print
-	// *******************************************************
+	// *************************************************************************
 	public void print() {
 		synchronized (logBuf) {
 			for (int j = 0; j < logBuf.size(); j++) {
@@ -1216,24 +1673,33 @@ class BTCMiner implements MsgObj {
 				if (logFile != null) {
 					logFile.println(dateFormat.format(ls.time) + ": " + name + ": " + ls.msg);
 				}
+				if (logFile2 != null) {
+					logFile2.println(dateFormat.format(ls.time) + ": " + name + ": " + ls.msg);
+				}
 			}
 			logBuf.clear();
 		}
 	}
 
+	// ******* rejectReason
+	// *************************************************************************
+	public void rejectReason(String s) {
+		lastRejectReason = s;
+	}
+
 	// ******* httpGet
-	// *******************************************************
-	public static String httpGet(MsgObj msgObj, String url, String user, String passw, String request) throws MalformedURLException, IOException {
+	// *************************************************************************
+	public static String httpGet(MsgObj msgObj, String url, String user, String passw, String request, int pool) throws MalformedURLException, IOException {
 		HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
 		con.setRequestMethod("POST");
 		con.setConnectTimeout((int) Math.round(2000.0 * BTCMiner.connectionEffort));
 		con.setReadTimeout(url == longPollURL ? 1000000 : (int) Math.round(2000.0 * BTCMiner.connectionEffort));
 		con.setRequestProperty("Authorization", "Basic " + encodeBase64(user + ":" + passw));
 		con.setRequestProperty("Accept-Encoding", "gzip,deflate");
+		con.setRequestProperty("Content-Length", "" + request.length());
+		con.setRequestProperty("User-Agent", "ztexBTCMiner");
 		con.setRequestProperty("Content-Type", "application/json");
 		con.setRequestProperty("Cache-Control", "no-cache");
-		con.setRequestProperty("User-Agent", "ztexBTCMiner");
-		con.setRequestProperty("Content-Length", "" + request.length());
 		con.setUseCaches(false);
 		con.setDoInput(true);
 		con.setDoOutput(true);
@@ -1247,14 +1713,16 @@ class BTCMiner implements MsgObj {
 		// read response header
 		String str = con.getHeaderField("X-Reject-Reason");
 		if (str != null && !str.equals("")) {
-			msgObj.msg("Warning: Rejected block: " + str);
+			msgObj.rejectReason(str);
 		}
 
 		// read response header
 		str = con.getHeaderField("X-Long-Polling");
 		if (str != null && !str.equals("") && longPollURL == null) {
 			synchronized (BTCMiner.newBlockMonitor) {
-				if (longPollURL == null) {
+				long t = new Date().getTime();
+
+				if (longPollURL == null && t > disableLPTime) {
 					longPollURL = (str.length() > 7 && str.substring(0, 4).equalsIgnoreCase("http")) ? str : url + str;
 					msgObj.msg("Using LongPolling URL " + longPollURL);
 					longPollUser = user;
@@ -1265,15 +1733,15 @@ class BTCMiner implements MsgObj {
 
 		// read response
 		InputStream is;
-		if (con.getContentEncoding() == null)
+		if (con.getContentEncoding() == null) {
 			is = con.getInputStream();
-		else if (con.getContentEncoding().equalsIgnoreCase("gzip"))
+		} else if (con.getContentEncoding().equalsIgnoreCase("gzip")) {
 			is = new GZIPInputStream(con.getInputStream());
-		else if (con.getContentEncoding().equalsIgnoreCase("deflate"))
+		} else if (con.getContentEncoding().equalsIgnoreCase("deflate")) {
 			is = new InflaterInputStream(con.getInputStream());
-		else
-			throw new IOException("httpGet: Unknown encoding: "
-					+ con.getContentEncoding());
+		} else {
+			throw new IOException("httpGet: Unknown encoding: " + con.getContentEncoding());
+		}
 
 		byte[] buf = new byte[1024];
 		StringBuffer response = new StringBuffer();
@@ -1288,81 +1756,130 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* bitcoinRequest
-	// *******************************************************
-	public static String bitcoinRequest(MsgObj msgObj, String url, String user, String passw, String request, String params) throws MalformedURLException, IOException {
+	// *************************************************************************
+	public static String bitcoinRequest(MsgObj msgObj, String url, String user, String passw, String request, String params, int pool) throws MalformedURLException, IOException {
 		bcid += 1;
-		return httpGet(msgObj, url, user, passw, "{\"jsonrpc\":\"1.0\",\"id\":" + bcid + ",\"method\":\"" + request + "\",\"params\":[" + (params.equals("") ? "" : ("\"" + params + "\"")) + "]}");
+		return httpGet(msgObj, url, user, passw, "{\"jsonrpc\":\"1.0\",\"id\":" + bcid + ",\"method\":\"" + request + "\",\"params\":[" + (params.equals("") ? "" : ("\"" + params + "\"")) + "]}", pool);
 	}
 
 	public String bitcoinRequest(String request, String params) throws MalformedURLException, IOException {
-		String s = bitcoinRequest(this, rpcurl[rpcNum], rpcuser[rpcNum], rpcpassw[rpcNum], request, params);
+		String s = bitcoinRequest(this, rpcurl[rpcNum], rpcuser[rpcNum], rpcpassw[rpcNum], request, params, rpcNum);
 		ioErrorCount[rpcNum] = 0;
 		return s;
 	}
 
 	// ******* getWork
-	// *******************************************************
+	// *************************************************************************
 	public boolean getWork() throws UsbException, MalformedURLException, IOException, ParserException {
+
 		long t = new Date().getTime();
 
 		int i = 0;
-		while (i < rpcCount && (disableTime[i] > t))
+		while (i < rpcCount && (rpcstate[i] == false || (disableTime[i] > t))) {
 			i++;
-		if (i >= rpcCount)
+		}
+		if (i >= rpcCount) {
 			return false;
-
+		}
 		rpcNum = i;
+
 		String response = bitcoinRequest("getwork", "");
+		// dmsg( "getWork returned: " + response );
+		rpcSharesGetwork[rpcNum] += 1;
 		t = new Date().getTime() - t;
 		getTime = getTime * 0.99 + t;
 		getTimeW = getTimeW * 0.99 + 1;
 
-		hexStrToData(jsonParse(response, "data"), dataBuf2);
-		newBlockMonitor.checkNew(dataBuf2);
+		try {
+			hexStrToData(jsonParse(response, "data"), dataBuf2);
+			newBlockMonitor.checkNew(dataBuf2);
+		} catch (NumberFormatException e) {
+		}
+
 		newCount = newBlockMonitor.newCount;
 
 		// if ( newCount == newBlockMonitor.newCount ) {
 		// try {
 		while (getNonces()) {
 		}
-		// }
-		// catch ( IOException e )
+		// } catch ( IOException e )
 		// ioErrorCount[rpcNum]++;
 		// }
 		// }
 
-		hexStrToData(jsonParse(response, "data"), dataBuf);
-		hexStrToData(jsonParse(response, "midstate"), midstateBuf);
-		initWork();
+		try {
+			hexStrToData(jsonParse(response, "data"), dataBuf);
+			hexStrToData(jsonParse(response, "midstate"), midstateBuf);
+		} catch (NumberFormatException e) {
+			throw new ParserException(e.getLocalizedMessage());
+		}
+
+		boolean b = false;
+		int k = dataBuf.length - sha256_pad1.length;
+		for (int j = 0; j < sha256_pad1.length; j++) {
+			if (sha256_pad1[j] != dataBuf[k + j]) {
+				b = true;
+				dataBuf[k + j] = sha256_pad1[j];
+			}
+		}
+		if (b) {
+			msg("Warning: Invalid data from " + rpcurl[rpcNum]);
+		}
+
+		sha256_transform(sha256_init_state, 0, dataBuf, 0, hashBuf, 0);
+		b = false;
+		for (int j = 0; j < 32; j++) {
+			if (hashBuf[j] != midstateBuf[j]) {
+				b = true;
+				midstateBuf[j] = hashBuf[j];
+			}
+		}
+		if (b) {
+			msg("Warning: Invalid midstate from " + rpcurl[rpcNum]);
+		}
+
 		lastGetWorkTime = new Date().getTime();
 		prevRpcNum = i;
 		return true;
 	}
 
 	// ******* submitWork
-	// *******************************************************
+	// *************************************************************************
 	public void submitWork(int n) throws MalformedURLException, IOException {
 		long t = new Date().getTime();
 
-		dataBuf[76] = (byte) (n & 255);
-		dataBuf[76 + 1] = (byte) ((n >> 8) & 255);
-		dataBuf[76 + 2] = (byte) ((n >> 16) & 255);
-		dataBuf[76 + 3] = (byte) ((n >> 24) & 255);
+		intToData(n, dataBuf, 76);
 
 		dmsg("Submitting new nonce " + intToHexStr(n));
-		if (blkLogFile != null)
+		if (blkLogFile != null) {
 			blkLogFile.println(dateFormat.format(new Date()) + ": " + name + ": submitted " + dataToHexStr(dataBuf) + " to " + rpcurl[rpcNum]);
+		}
 		String response = bitcoinRequest("getwork", dataToHexStr(dataBuf));
+		//dmsg("submitWork returned: " + response);
 		String err = null;
 		try {
 			err = jsonParse(response, "error");
 		} catch (ParserException e) {
 		}
-		if (err != null && !err.equals("null") && !err.equals(""))
+		if (err != null && !err.equals("null") && !err.equals("")) {
 			msg("Error attempting to submit new nonce: " + err);
+		}
 
-		for (int i = lastGoldenNonces.length - 1; i > 0; i--)
+		String result = null;
+		try {
+			result = jsonParse(response, "result");
+		} catch (ParserException e) {
+		}
+		if (result != null && result.equals("true")) {
+			rpcSharesAccepted[rpcNum] += 1;
+		} else {
+			msg("Warning: Rejected block: " + lastRejectReason);
+			rpcSharesRejected[rpcNum] += 1;
+		}
+
+		for (int i = lastGoldenNonces.length - 1; i > 0; i--) {
 			lastGoldenNonces[i] = lastGoldenNonces[i - 1];
+		}
 		lastGoldenNonces[0] = n;
 
 		t = new Date().getTime() - t;
@@ -1371,108 +1888,96 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* initWork
-	// *******************************************************
+	// *************************************************************************
 	public void initWork(byte[] data, byte[] midstate) {
-		if (data.length != 128)
+		if (data.length != 128) {
 			throw new NumberFormatException("Invalid length of data");
-		if (midstate.length != 32)
+		}
+		if (midstate.length != 32) {
 			throw new NumberFormatException("Invalid length of midstate");
-		for (int i = 0; i < 128; i++)
+		}
+		for (int i = 0; i < 128; i++) {
 			dataBuf[i] = data[i];
-		for (int i = 0; i < 32; i++)
+		}
+		for (int i = 0; i < 32; i++) {
 			midstateBuf[i] = midstate[i];
-		initWork();
-	}
-
-	public void initWork() {
-		// data is Middleendian !!!
-		for (int i = 0; i < 80; i += 4) {
-			blockBuf[i] = dataBuf[i + 3];
-			blockBuf[i + 1] = dataBuf[i + 2];
-			blockBuf[i + 2] = dataBuf[i + 1];
-			blockBuf[i + 3] = dataBuf[i];
 		}
 	}
 
 	// ******* getHash
-	// *******************************************************
-	public byte[] getHash(byte[] data) {
-		digest.update(blockBuf);
-		byte[] first = digest.digest();
-		byte[] second = digest.digest(first);
-		return second;
+	// *************************************************************************
+	public int getHash(int n) throws NumberFormatException {
+		intToData(n, dataBuf, 76);
+		sha256_transform(midstateBuf, 0, dataBuf, 64, hashBuf, 0);
+		sha256_transform(sha256_init_state, 0, hashBuf, 0, hashBuf, 0);
+		return dataToInt(hashBuf, 28);
 	}
 
-	public byte[] getHash(int n) {
-		blockBuf[76] = (byte) ((n >> 24) & 255);
-		blockBuf[76 + 1] = (byte) ((n >> 16) & 255);
-		blockBuf[76 + 2] = (byte) ((n >> 8) & 255);
-		blockBuf[76 + 3] = (byte) (n & 255);
-
-		/*
-		 * digest.update(blockBuf); byte[] first = digest.digest(); byte[]
-		 * second = digest.digest(first); return second;
-		 */
-		try {
-			digest.update(blockBuf);
-			digest.digest(hashBuf, 0, 32);
-			digest.update(hashBuf);
-			digest.digest(hashBuf, 0, 32);
-		} catch (DigestException e) {
-			msg("Error calculating hash value: " + e.getLocalizedMessage()); // should never occur
-		}
+	// ******* getMidstate
+	// *************************************************************************
+	public byte[] getMidstate() {
+		sha256_transform(sha256_init_state, 0, dataBuf, 0, hashBuf, 0);
 		return hashBuf;
 	}
 
 	// ******* sendData
-	// *******************************************************
+	// *************************************************************************
 	public void sendData() throws UsbException {
-		for (int i = 0; i < 12; i++)
+		for (int i = 0; i < 12; i++) {
 			sendBuf[i] = dataBuf[i + 64];
-		for (int i = 0; i < 32; i++)
+		}
+		for (int i = 0; i < 32; i++) {
 			sendBuf[i + 12] = midstateBuf[i];
+		}
 
 		long t = new Date().getTime();
-		try {
-			selectFpga();
-		} catch (InvalidFirmwareException e) {
-			// shouldn't occur
+		synchronized (ztex) {
+			try {
+				selectFpga();
+			} catch (InvalidFirmwareException e) {
+				// shouldn't occur
+			}
+			ztex.vendorCommand2(0x80, "Send hash data", 0, 0, sendBuf, 44);
 		}
-		ztex.vendorCommand2(0x80, "Send hash data", 0, 0, sendBuf, 44);
 		usbTime += new Date().getTime() - t;
 
 		ignoreErrorTime = new Date().getTime() + 500; // ignore errors for next 1s
-		for (int i = 0; i < numNonces; i++)
+		for (int i = 0; i < numNonces; i++) {
 			nonce[i] = 0;
+		}
 		isRunning = true;
 	}
 
 	// ******* setFreq
-	// *******************************************************
+	// *************************************************************************
 	public void setFreq(int m) throws UsbException {
-		if (m > freqMaxM)
+		if (m > freqMaxM) {
 			m = freqMaxM;
+		}
 
 		long t = new Date().getTime();
-		try {
-			selectFpga();
-		} catch (InvalidFirmwareException e) {
-			// shouldn't occur
+		synchronized (ztex) {
+			try {
+				selectFpga();
+			} catch (InvalidFirmwareException e) {
+				// shouldn't occur
+			}
+			ztex.vendorCommand(0x83, "Send hash data", m, 0);
 		}
-		ztex.vendorCommand(0x83, "Send hash data", m, 0);
 		usbTime += new Date().getTime() - t;
-
 		ignoreErrorTime = new Date().getTime() + 2000; // ignore errors for next 2s
 	}
 
 	// ******* suspend
-	// *******************************************************
+	// *************************************************************************
 	public boolean suspend() {
 		suspended = true;
 		if (suspendSupported) {
 			try {
-				selectFpga();
-				ztex.vendorCommand(0x84, "Suspend");
+				synchronized (ztex) {
+					selectFpga();
+					ztex.vendorCommand(0x84, "Suspend");
+				}
 			} catch (Exception e) {
 				msg("Suspend command failed: " + e.getLocalizedMessage());
 				return false;
@@ -1485,18 +1990,22 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* updateFreq
-	// *******************************************************
+	// *************************************************************************
 	public void updateFreq() throws UsbException {
+
 		for (int i = 0; i < freqMaxM; i++) {
-			if (maxErrorRate[i + 1] * i < maxErrorRate[i] * (i + 20))
+			if (maxErrorRate[i + 1] * i < maxErrorRate[i] * (i + 20)) {
 				maxErrorRate[i + 1] = maxErrorRate[i] * (1.0 + 20.0 / i);
+			}
 		}
 
 		int maxM = 0;
-		while (maxM < freqMDefault && maxErrorRate[maxM + 1] < maxMaxErrorRate)
+		while (maxM < freqMDefault && maxErrorRate[maxM + 1] < maxMaxErrorRate) {
 			maxM++;
-		while (maxM < freqMaxM && errorWeight[maxM] > 150 && maxErrorRate[maxM + 1] < maxMaxErrorRate)
+		}
+		while (maxM < freqMaxM && errorWeight[maxM] > 150 && maxErrorRate[maxM + 1] < maxMaxErrorRate) {
 			maxM++;
+		}
 
 		int bestM = 0;
 		double bestR = 0;
@@ -1509,34 +2018,33 @@ class BTCMiner implements MsgObj {
 		}
 
 		if (bestM != freqM) {
-			if (freqM > 0) {
-				msg("Change frequency from " + String.format("%.2f", (freqM + 1) * (freqM1)) + "MHz to " + String.format("%.2f", (bestM + 1) * (freqM1)) + "MHz");
-			} else {
-				msg("Set frequency to " + String.format("%.2f", (bestM + 1) * (freqM1)) + "MHz");
-			}
+			msg("Set frequency " + (freqM < 0 ? "" : "from " + String.format("%.2f", (freqM + 1) * (freqM1)) + "MHz ") + "to " + String.format("%.2f", (bestM + 1) * (freqM1)) + "MHz");
 			freqM = bestM;
 			setFreq(freqM);
 		}
 
 		maxM = freqMDefault;
-		while (maxM < freqMaxM && errorWeight[maxM + 1] > 100)
+		while (maxM < freqMaxM && errorWeight[maxM + 1] > 100) {
 			maxM++;
+		}
 		if ((bestM + 1 < (1.0 - overheatThreshold) * maxHashRate) && bestM < maxM - 1) {
 			try {
-				selectFpga();
-				ztex.resetFpga();
+				synchronized (ztex) {
+					selectFpga();
+					ztex.resetFpga();
+				}
 			} catch (Exception e) {
 			}
-			throw new UsbException("Hash rate drop of " + String.format("%.1f", (1.0 - 1.0 * (bestM + 1) / maxHashRate) * 100) + "% detect. This may be caused by overheating. FPGA is shut down to prevent damage.  " + maxHashRate);
+			throw new UsbException("Hash rate drop of " + String.format("%.1f", (1.0 - 1.0 * (bestM + 1) / maxHashRate) * 100) + "% detect. This may be caused by overheating. FPGA is shut down to prevent damage.");
 		}
 	}
 
 	// ******* getNonces
-	// *******************************************************
+	// *************************************************************************
 	public boolean getNonces() throws UsbException, MalformedURLException, IOException {
-		if (!isRunning || disableTime[prevRpcNum] > new Date().getTime())
+		if (!isRunning || disableTime[prevRpcNum] > new Date().getTime()) {
 			return false;
-
+		}
 		rpcNum = prevRpcNum;
 
 		getNoncesInt();
@@ -1545,26 +2053,29 @@ class BTCMiner implements MsgObj {
 			errorCount[freqM] *= 0.995;
 			errorWeight[freqM] = errorWeight[freqM] * 0.995 + 1.0;
 			for (int i = 0; i < numNonces; i++) {
-				if (!checkNonce(nonce[i], hash7[i]))
+				if (!checkNonce(nonce[i], hash7[i])) {
 					errorCount[freqM] += 1.0 / numNonces;
+				}
 			}
 
 			errorRate[freqM] = errorCount[freqM] / errorWeight[freqM] * Math.min(1.0, errorWeight[freqM] * 0.01);
-			if (errorRate[freqM] > maxErrorRate[freqM])
+			if (errorRate[freqM] > maxErrorRate[freqM]) {
 				maxErrorRate[freqM] = errorRate[freqM];
-			if (errorWeight[freqM] > 100)
+			}
+			if (errorWeight[freqM] > 100) {
 				maxHashRate = Math.max(maxHashRate, (freqM + 1.0) * (1 - errorRate[freqM]));
+			}
 		}
 
 		boolean submitted = false;
 		for (int i = 0; i < numNonces * (1 + extraSolutions); i++) {
 			int n = goldenNonce[i];
 			if (n != -offsNonces) {
-				getHash(n);
-				if (hashBuf[31] == 0 && hashBuf[30] == 0 && hashBuf[29] == 0 && hashBuf[28] == 0) {
+				if (getHash(n) == 0) {
 					int j = 0;
-					while (j < lastGoldenNonces.length && lastGoldenNonces[j] != n)
+					while (j < lastGoldenNonces.length && lastGoldenNonces[j] != n) {
 						j++;
+					}
 					if (j >= lastGoldenNonces.length) {
 						submitWork(n);
 						submittedCount += 1;
@@ -1578,19 +2089,21 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* getNoncesInt
-	// *******************************************************
+	// *************************************************************************
 	public void getNoncesInt() throws UsbException {
 		int bs = 12 + extraSolutions * 4;
 		byte[] buf = new byte[numNonces * bs];
 		boolean overflow = false;
 
 		long t = new Date().getTime();
-		try {
-			selectFpga();
-		} catch (InvalidFirmwareException e) {
-			// shouldn't occur
+		synchronized (ztex) {
+			try {
+				selectFpga();
+			} catch (InvalidFirmwareException e) {
+				// shouldn't occur
+			}
+			ztex.vendorRequest2(0x81, "Read hash data", 0, 0, buf, numNonces * bs);
 		}
-		ztex.vendorRequest2(0x81, "Read hash data", 0, 0, buf, numNonces * bs);
 		usbTime += new Date().getTime() - t;
 
 		// System.out.print(dataToHexStr(buf)+"            ");
@@ -1600,83 +2113,111 @@ class BTCMiner implements MsgObj {
 			overflow |= ((j >> 4) & 0xfffffff) < ((nonce[i] >> 4) & 0xfffffff);
 			nonce[i] = j;
 			hash7[i] = dataToInt(buf, i * bs + 8);
-			for (j = 0; j < extraSolutions; j++)
+			for (j = 0; j < extraSolutions; j++) {
 				goldenNonce[i * (1 + extraSolutions) + 1 + j] = dataToInt(buf, i * bs + 12 + j * 4) - offsNonces;
+			}
 		}
-		if (overflow && !PollLoop.scanMode)
+		if (overflow && !PollLoop.scanMode) {
 			overflowCount += 1;
+		}
 	}
 
 	// ******* checkNonce
-	// *******************************************************
+	// *************************************************************************
 	public boolean checkNonce(int n, int h) throws UsbException {
 		int offs[] = { 0, 1, -1, 2, -2 };
 		// int offs[] = { 0 };
 		for (int i = 0; i < offs.length; i++) {
-			getHash(n + offs[i]);
-			if (((hashBuf[31] & 255) | ((hashBuf[30] & 255) << 8) | ((hashBuf[29] & 255) << 16) | ((hashBuf[28] & 255) << 24)) == h + 0x5be0cd19)
+			if (getHash(n + offs[i]) == h + 0x5be0cd19) {
 				return true;
+			}
 		}
 		return false;
 	}
 
 	// ******* totalHashRate
-	// *******************************************************
+	// *************************************************************************
 	public double totalHashRate() {
 		return fatalError == null ? (freqM + 1) * freqM1 * (1 - errorRate[freqM]) * hashesPerClock : 0;
 	}
 
 	// ******* submittedHashRate
-	// *******************************************************
+	// *************************************************************************
 	public double submittedHashRate() {
 		return fatalError == null ? 4.294967296e6 * totalSubmittedCount / (new Date().getTime() - startTime) : 0;
 	}
 
 	// ******* printInfo
-	// *******************************************************
+	// *************************************************************************
 	public void printInfo(boolean force) {
 		long t = new Date().getTime();
-
-		if (!force && (clusterMode || lastInfoTime + infoInterval > t || !isRunning))
+		if (!force && (clusterMode || lastInfoTime + infoInterval > t || !isRunning)) {
 			return;
-
+		}
 		if (fatalError != null) {
-			printMsg(name + ": " + fatalError);
+			printMsg2(name + ": " + fatalError);
 			return;
 		}
 
 		if (suspended) {
-			printMsg(name + ": Suspended");
+			printMsg2(name + ": Suspended");
 			return;
 		}
 
 		StringBuffer sb = new StringBuffer("f=" + String.format("%.2f", (freqM + 1) * freqM1) + "MHz");
 
-		if (errorWeight[freqM] > 20)
+		if (errorWeight[freqM] > 20) {
 			sb.append(",  errorRate=" + String.format("%.2f", errorRate[freqM] * 100) + "%");
+		}
 
-		if (errorWeight[freqM] > 100)
+		if (errorWeight[freqM] > 100) {
 			sb.append(",  maxErrorRate=" + String.format("%.2f", maxErrorRate[freqM] * 100) + "%");
+		}
 
-		/*
-		 * if ( freqM<255 && (errorWeight[freqM+1]>100.1 ||
-		 * maxErrorRate[freqM+1]>0.001 ) ) sb.append(",  nextMaxErrorRate="+
-		 * String.format("%.2f",maxErrorRate[freqM+1]*100)+"%");
-		 */
 		double hr = (freqM + 1) * freqM1 * (1 - errorRate[freqM]) * hashesPerClock;
-		if (errorWeight[freqM] > 20)
+
+		if (errorWeight[freqM] > 20) {
 			sb.append(",  hashRate=" + String.format("%.1f", hr) + "MH/s");
+		}
 
 		sb.append(",  submitted " + submittedCount + " new nonces,  luckFactor=" + String.format("%.2f", submittedHashRate() / hr + 0.0049));
 		submittedCount = 0;
 
-		printMsg(name + ": " + sb.toString());
+		printMsg2(name + ": " + sb.toString());
 
 		lastInfoTime = t;
 	}
 
+	// ******* getInfo
+	// *************************************************************************
+	public String getInfo() {
+		if (!isRunning) {
+			return name + ": not running";
+		}
+		if (fatalError != null) {
+			return name + ": " + fatalError;
+		}
+		if (suspended) {
+			return name + ": suspended";
+		}
+
+		StringBuffer sb = new StringBuffer("f=" + String.format("%.2f", (freqM + 1) * freqM1) + "MHz");
+		if (true || errorWeight[freqM] > 20) {
+			sb.append(",  errorRate=" + String.format("%.2f", errorRate[freqM] * 100) + "%");
+		}
+		if (true || errorWeight[freqM] > 100) {
+			sb.append(",  maxErrorRate=" + String.format("%.2f", maxErrorRate[freqM] * 100) + "%");
+		}
+		double hr = (freqM + 1) * freqM1 * (1 - errorRate[freqM]) * hashesPerClock;
+		if (true || errorWeight[freqM] > 20) {
+			sb.append(",  hashRate=" + String.format("%.1f", hr) + "MH/s");
+		}
+		sb.append(",  submitted " + submittedCount + " new nonces,  luckFactor=" + String.format("%.2f", submittedHashRate() / hr + 0.0049));
+		return name + ": " + sb.toString();
+	}
+
 	// ******* getDescriptor
-	// *******************************************************
+	// *************************************************************************
 	private void getDescriptor() throws UsbException, FirmwareException {
 		byte[] buf = new byte[64];
 
@@ -1692,8 +2233,9 @@ class BTCMiner implements MsgObj {
 		freqM1 = ((buf[4] & 255) | ((buf[5] & 255) << 8)) * 0.01;
 		freqM = (buf[6] & 255);
 		freqMaxM = (buf[7] & 255);
-		if (freqM > freqMaxM)
+		if (freqM > freqMaxM) {
 			freqM = freqMaxM;
+		}
 		freqMDefault = freqM;
 
 		suspendSupported = buf[0] == 5;
@@ -1703,51 +2245,61 @@ class BTCMiner implements MsgObj {
 
 		int i0 = buf[0] > 4 ? 11 : (buf[0] == 4 ? 10 : 8);
 		int i = i0;
-		while (i < 64 && buf[i] != 0)
+		while (i < 64 && buf[i] != 0) {
 			i++;
-		if (i < i0 + 1)
+		}
+		if (i < i0 + 1) {
 			throw new FirmwareException("Invalid bitstream file name");
+		}
 		bitFileName = new String(buf, i0, i - i0);
 
 		if (buf[0] < 4) {
-			if (bitFileName.substring(0, 13).equals("ztex_ufm1_15b"))
+			if (bitFileName.substring(0, 13).equals("ztex_ufm1_15b")) {
 				hashesPerClock = 0.5;
+			}
 			msg("Warning: HASHES_PER_CLOCK not defined, assuming " + hashesPerClock);
 		}
 	}
 
 	// ******* checkUpdate
-	// *******************************************************
+	// *************************************************************************
 	public boolean checkUpdate() {
 		long t = new Date().getTime();
-		if (!isRunning)
+		if (!isRunning) {
 			return true;
-		if (ignoreErrorTime > t)
+		}
+		if (ignoreErrorTime > t) {
 			return false;
-		if (newCount < newBlockMonitor.newCount)
+		}
+		if (newCount < newBlockMonitor.newCount) {
 			return true;
-		if (disableTime[prevRpcNum] > t)
+		}
+		if (disableTime[prevRpcNum] > t) {
 			return true;
-		if (lastGetWorkTime + maxPollInterval < t)
+		}
+		if (lastGetWorkTime + maxPollInterval < t) {
 			return true;
-		for (int i = 0; i < numNonces; i++)
-			if (nonce[i] < 0)
+		}
+		for (int i = 0; i < numNonces; i++) {
+			if (((nonce[i] >> 1) & 0x7fffffff) > (0x38000000 + Math.round(Math.random() * 0x10000000))) {
 				return true;
+			}
+		}
 		return false;
 	}
 
 	// ******* descriptorInfo
-	// *******************************************************
+	// *************************************************************************
 	public String descriptorInfo() {
 		return "bitfile=" + bitFileName + "   f_default=" + String.format("%.2f", freqM1 * (freqMDefault + 1)) + "MHz  f_max=" + String.format("%.2f", freqM1 * (freqMaxM + 1)) + "MHz  HpC=" + hashesPerClock + "H";
 	}
 
 	// ******* resetCounters
-	// *******************************************************
+	// *************************************************************************
 	public void resetCounters() {
-		while (freqMDefault < freqM && errorWeight[freqMDefault + 1] > 100)
+		while (freqMDefault < freqM && errorWeight[freqMDefault + 1] > 100) {
 			freqMDefault++;
-
+		}
 		for (int i = 0; i < 255; i++) {
 			errorCount[i] *= 0.05;
 			errorWeight[i] *= 0.05;
@@ -1759,7 +2311,7 @@ class BTCMiner implements MsgObj {
 	}
 
 	// ******* main
-	// *******************************************************
+	// *************************************************************************
 	public static void main(String args[]) {
 
 		int devNum = -1;
@@ -1776,12 +2328,8 @@ class BTCMiner implements MsgObj {
 
 		char mode = 's';
 
-		long autoResetInterval = 0;
-
-		rpcCount = 1;
-		rpcurl[0] = "http://127.0.0.1:8332";
-		rpcuser[0] = null;
-		rpcpassw[0] = null;
+		File wwwroot = new File(".").getAbsoluteFile();
+		int httpdPortno = 8080;
 
 		try {
 			// init USB stuff
@@ -1792,8 +2340,9 @@ class BTCMiner implements MsgObj {
 				if (args[i].equals("-d")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
+						}
 						devNum = Integer.parseInt(args[i]);
 					} catch (Exception e) {
 						throw new ParameterException("Device number expected after -d");
@@ -1806,9 +2355,17 @@ class BTCMiner implements MsgObj {
 					try {
 						logFileName = args[i];
 					} catch (Exception e) {
-						throw new ParameterException(
-								"Error: File name expected after `-l': "
-										+ e.getLocalizedMessage());
+						throw new ParameterException("Error: File name expected after `-l': " + e.getLocalizedMessage());
+					}
+				} else if (args[i].equals("-l2")) {
+					i++;
+					if (i >= args.length) {
+						throw new ParameterException("Error: File name expected after `-l2'");
+					}
+					try {
+						logFile2 = new PrintStream(new FileOutputStream(args[i], true), true);
+					} catch (Exception e) {
+						throw new ParameterException("Error: File name expected after `-l2': " + e.getLocalizedMessage());
 					}
 				} else if (args[i].equals("-bl")) {
 					i++;
@@ -1816,56 +2373,84 @@ class BTCMiner implements MsgObj {
 						throw new ParameterException("Error: File name expected after `-dl'");
 					}
 					try {
-						blkLogFile = new PrintStream(new FileOutputStream( args[i], true), true);
+						blkLogFile = new PrintStream(new FileOutputStream(args[i], true), true);
 					} catch (Exception e) {
 						throw new ParameterException("Error: File name expected after `-bl': " + e.getLocalizedMessage());
 					}
-				} else if (args[i].equals("-host")) {
+				} else if (args[i].equals("-c")) {
 					i++;
-					try {
-						if (i >= args.length)
-							throw new Exception();
-						rpcurl[0] = args[i];
-					} catch (Exception e) {
-						throw new ParameterException("URL expected after -host");
+					if (i >= args.length) {
+						throw new ParameterException("Error: File name expected after `-c'");
 					}
-				} else if (args[i].equals("-u")) {
-					i++;
 					try {
-						if (i >= args.length)
-							throw new Exception();
-						rpcuser[0] = args[i];
+						in2FileName = args[i];
+						new Thread() {
+							public void run() {
+								try {
+									in2 = new FileInputStream(in2FileName);
+								} catch (Exception e) {
+									System.err.println("Error: File name expected after `-c': " + e.getLocalizedMessage());
+								}
+							}
+						}.start();
 					} catch (Exception e) {
-						throw new ParameterException("User expected after -u");
+						throw new ParameterException("Error: File name expected after `-c': " + e.getLocalizedMessage());
 					}
-				} else if (args[i].equals("-p")) {
-					i++;
-					try {
-						if (i >= args.length)
-							throw new Exception();
-						rpcpassw[0] = args[i];
-					} catch (Exception e) {
-						throw new ParameterException("Password expected after -p");
+				} else if (args[i].equals("-o")) {
+					if (rpcCount >= maxRpcCount) {
+						throw new IndexOutOfBoundsException("Maximum amount of servers reached");
 					}
-				} else if (args[i].equals("-b")) {
-					i += 3;
+					if (rpcFirstBackup > 0) {
+						throw new ParameterException("Don't mix options -o and -b");
+					}
+					i += 4;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
-						if (rpcCount >= maxRpcCount)
-							throw new IndexOutOfBoundsException("Maximum aoumount of backup servers reached");
+						}
+						rpcname[rpcCount] = args[i - 3];
 						rpcurl[rpcCount] = args[i - 2];
 						rpcuser[rpcCount] = args[i - 1];
 						rpcpassw[rpcCount] = args[i];
+						if (rpcCount == 0) {
+							rpcstate[rpcCount] = true;
+						} else {
+							rpcstate[rpcCount] = false;
+						}
 						rpcCount += 1;
 					} catch (Exception e) {
-						throw new ParameterException("<URL> <user name> <password> expected after -b");
+						throw new ParameterException("<name> <URL> <user name> <password> expected after -o");
+					}
+				} else if (args[i].equals("-b")) {
+					if (rpcCount >= maxRpcCount) {
+						throw new IndexOutOfBoundsException("Maximum amount of servers reached");
+					}
+					if (rpcCount == 0) {
+						throw new ParameterException("Please specify at least one -o before -b");
+					}
+					i += 4;
+					try {
+						if (i >= args.length) {
+							throw new Exception();
+						}
+						rpcname[rpcCount] = args[i - 3];
+						rpcurl[rpcCount] = args[i - 2];
+						rpcuser[rpcCount] = args[i - 1];
+						rpcpassw[rpcCount] = args[i];
+						rpcstate[rpcCount] = true;
+						if (rpcFirstBackup == 0) {
+							rpcFirstBackup = rpcCount;
+						}
+						rpcCount += 1;
+					} catch (Exception e) {
+						throw new ParameterException("<name> <URL> <user name> <password> expected after -b");
 					}
 				} else if (args[i].equals("-lp")) {
 					i += 3;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
+						}
 						longPollURL = args[i - 2];
 						longPollUser = args[i - 1];
 						longPollPassw = args[i];
@@ -1875,17 +2460,19 @@ class BTCMiner implements MsgObj {
 				} else if (args[i].equals("-f")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
+						}
 						firmwareFile = args[i];
 					} catch (Exception e) {
-						throw new ParameterException("ihx file name expected afe -f");
+						throw new ParameterException("ihx file name expected after -f");
 					}
 				} else if (args[i].equals("-pt")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
+						}
 						filterType = args[i];
 					} catch (Exception e) {
 						throw new ParameterException("<string> after -pt");
@@ -1893,8 +2480,9 @@ class BTCMiner implements MsgObj {
 				} else if (args[i].equals("-ps")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
+						}
 						filterSN = args[i];
 					} catch (Exception e) {
 						throw new ParameterException("<string> after -ps");
@@ -1902,15 +2490,18 @@ class BTCMiner implements MsgObj {
 				} else if (args[i].equals("-m")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
-						if (args[i].length() < 1)
+						}
+						if (args[i].length() < 1) {
 							throw new Exception();
+						}
 						mode = Character.toLowerCase(args[i].charAt(0));
-						if (mode != 's' && mode != 't' && mode != 'p' && mode != 'c')
+						if (mode != 's' && mode != 't' && mode != 'p' && mode != 'c' && mode != 'h') {
 							throw new Exception();
+						}
 					} catch (Exception e) {
-						throw new ParameterException("s|t|p|c expected afe -m");
+						throw new ParameterException("s|t|p|c|h expected after -m");
 					}
 				} else if (args[i].equals("-s")) {
 					i++;
@@ -1922,6 +2513,7 @@ class BTCMiner implements MsgObj {
 					printBus = true;
 				} else if (args[i].equals("-v")) {
 					verbose = true;
+					BTCMinerCluster.verbose = true;
 				} else if (args[i].equals("-rf")) {
 					eraseFirmware = true;
 				} else if (args[i].equals("-ep0")) {
@@ -1932,8 +2524,9 @@ class BTCMiner implements MsgObj {
 				} else if (args[i].equals("-n")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
+						}
 						BTCMinerCluster.maxDevicesPerThread = Integer.parseInt(args[i]);
 					} catch (Exception e) {
 						throw new ParameterException("Number expected after -n");
@@ -1941,65 +2534,109 @@ class BTCMiner implements MsgObj {
 				} else if (args[i].equals("-oh")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
+						}
 						overheatThreshold = Double.parseDouble(args[i]);
 					} catch (Exception e) {
 						throw new ParameterException("Number expected after -oh");
 					}
+				} else if (args[i].equals("-e")) {
+					i++;
+					try {
+						if (i >= args.length) {
+							throw new Exception();
+						}
+						double d = Double.parseDouble(args[i]);
+						if (d < 0.0001) {
+							d = 0.0001;
+						}
+						if (d < maxMaxErrorRate) {
+							maxMaxErrorRate = d;
+						}
+					} catch (Exception e) {
+						throw new ParameterException("Number expected after -e");
+					}
 				} else if (args[i].equals("-ac")) {
 					i++;
 					try {
-						if (i >= args.length)
+						if (i >= args.length) {
 							throw new Exception();
-						autoResetInterval = Long.parseLong(args[i]);
-						if (autoResetInterval < 0)
+						}
+						long autoResetInterval = Long.parseLong(args[i]);
+						if (autoResetInterval < 0) {
 							throw new Exception();
-						autoResetInterval *= 1000;	// in milliseconds
+						}
+						BTCMinerCluster.autoResetInterval = autoResetInterval * 1000; // in milliseconds
 					} catch (Exception e) {
 						throw new ParameterException("Wrong or missing parameter after -ac");
 					}
 				} else if (args[i].equals("-nolog")) {
 					noLog = true;
+				} else if (args[i].equals("-id")) {
+					i++;
+					try {
+						if (i >= args.length) {
+							throw new Exception();
+						}
+						clusterId = args[i];
+					} catch (Exception e) {
+						throw new ParameterException("Some value expected after -id");
+					}
+				} else if (args[i].equals("-p")) {
+					i++;
+					try {
+						if (i >= args.length) {
+							throw new Exception();
+						}
+						httpdPortno = Integer.parseInt(args[i]);
+						if (httpdPortno <= 0 || httpdPortno >= 65536) {
+							throw new Exception();
+						}
+					} catch (Exception e) {
+						throw new ParameterException("Wrong or missing parameter after -p");
+					}
 				} else {
 					throw new ParameterException("Invalid Parameter: " + args[i]);
 				}
 			}
 
-			if (noLog != true)
+			if (noLog != true) {
 				logFile = new PrintStream(new FileOutputStream(logFileName, true), true);
+			}
 
-			if (overheatThreshold > 0.1001)
+			if (overheatThreshold > 0.1001) {
 				System.err.println("Warning: overheat threshold set to " + overheatThreshold + ": overheat shutdown may be triggered too late, recommended values: 0..0.1");
+			}
 
-			if (BTCMinerCluster.maxDevicesPerThread < 1)
+			if (BTCMinerCluster.maxDevicesPerThread < 1) {
 				BTCMinerCluster.maxDevicesPerThread = 127;
+			}
 
-			if (mode != 'c' && filterSN != null)
+			if (mode != 'c' && mode != 'h' && filterSN != null) {
 				filterSN = checkSnString(filterSN);
+			}
 
 			if (mode != 't' && mode != 'p') {
+				if (rpcCount == 0) {
+					throw new ParameterException("Missing rpcpool - Please specify at least one mining pool");
+				}
+
 				if (rpcuser[0] == null) {
 					System.out.print("Enter RPC user name: ");
-					rpcuser[0] = new BufferedReader(new InputStreamReader( System.in)).readLine();
+					rpcuser[0] = new BufferedReader(new InputStreamReader(System.in)).readLine();
 				}
 
 				if (rpcpassw[0] == null) {
 					System.out.print("Enter RPC password: ");
-					rpcpassw[0] = new BufferedReader(new InputStreamReader( System.in)).readLine();
+					rpcpassw[0] = new BufferedReader(new InputStreamReader(System.in)).readLine();
 				}
 			}
 
-			/*
-			 * Authenticator.setDefault(new Authenticator() { protected
-			 * PasswordAuthentication getPasswordAuthentication() { return new
-			 * PasswordAuthentication (BTCMiner.rpcuser,
-			 * BTCMiner.rpcpassw.toCharArray()); } });
-			 */
-
 			if (mode == 's' || mode == 't') {
-				if (devNum < 0)
+				if (devNum < 0) {
 					devNum = 0;
+				}
 
 				ZtexScanBus1 bus = new ZtexScanBus1(ZtexDevice1.ztexVendorId, ZtexDevice1.ztexProductId, filterSN == null, false, 1, filterSN, 10, 0, 1, 0);
 				if (bus.numberOfDevices() <= 0) {
@@ -2013,7 +2650,7 @@ class BTCMiner implements MsgObj {
 
 				BTCMiner miner = new BTCMiner(bus.device(devNum), firmwareFile, verbose);
 				if (mode == 't') { // single mode
-					miner.initWork( hexStrToData("0000000122f3e795bb7a55b2b4a580e0dbba9f2a5aedbfc566632984000008de00000000e951667fbba0cfae7719ab2fb4ab8d291a20d387782f4610297f5899cc58b7d64e4056801a08e1e500000000000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000"), hexStrToData("28b81bd40a0e1b75d18362cb9a2faa61669d42913f26194f776c349e97559190"));
+					miner.initWork(hexStrToData("0000000122f3e795bb7a55b2b4a580e0dbba9f2a5aedbfc566632984000008de00000000e951667fbba0cfae7719ab2fb4ab8d291a20d387782f4610297f5899cc58b7d64e4056801a08e1e500000000000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000"), hexStrToData("28b81bd40a0e1b75d18362cb9a2faa61669d42913f26194f776c349e97559190"));
 
 					miner.sendData();
 					for (int i = 0; i < 200; i++) {
@@ -2023,34 +2660,28 @@ class BTCMiner implements MsgObj {
 						}
 						miner.getNoncesInt();
 
-						miner.getHash(miner.nonce[0]);
 						for (int j = 0; j < miner.numNonces; j++) {
-							System.out.println(i + "-" + j + ":  " + intToHexStr(miner.nonce[j]) + "    " + miner.checkNonce(miner.nonce[j], miner.hash7[j]) + "   " + miner.overflowCount + "    " + intToHexStr(miner.goldenNonce[j * (1 + miner.extraSolutions)]) + "      " + dataToHexStr(miner .getHash(miner.goldenNonce[j])));
+							System.out.println(i + "-" + j + ":  " + intToHexStr(miner.nonce[j]) + "    " + miner.checkNonce(miner.nonce[j], miner.hash7[j]) + "   " + miner.overflowCount + "    " + intToHexStr(miner.goldenNonce[j * (1 + miner.extraSolutions)]) + "      " + intToHexStr(miner.getHash(miner.goldenNonce[j])));
 						}
 					}
 				} else { // single mode
 					Vector<BTCMiner> v = new Vector<BTCMiner>();
 					v.add(miner);
-					for (int i = 1; i < miner.numberOfFpgas(); i++)
+					for (int i = 1; i < miner.numberOfFpgas(); i++) {
 						v.add(new BTCMiner(miner.ztex(), miner.fpgaNum(i), verbose));
+					}
 					System.out.println("");
-					if (miner.ztex().numberOfFpgas() > 1)
+					if (miner.ztex().numberOfFpgas() > 1) {
 						System.out.println("A multi-FPGA board is detected. Use the cluster mode for additional statistics.");
+					}
 					System.out.println("Disconnect device or press Ctrl-C for exit\n");
 					new PollLoop(v).run();
 				}
 			} else if (mode == 'p') {
-				if (eraseFirmware && filterType == null && filterSN == null)
+				if (eraseFirmware && filterType == null && filterSN == null) {
 					throw new ParameterException("-rf requires -pt or -ps");
+				}
 
-				/*
-				 * ZtexScanBus1 bus = ( filterType == null && filterSN == null )
-				 * ? new ZtexScanBus1( ZtexDevice1.cypressVendorId,
-				 * ZtexDevice1.cypressProductId, true, false, 1) : new
-				 * ZtexScanBus1( ZtexDevice1.ztexVendorId,
-				 * ZtexDevice1.ztexProductId, false, false, 1, null, 10, 0, 1, 0
-				 * );
-				 */
 				ZtexScanBus1 bus = new ZtexScanBus1(ZtexDevice1.ztexVendorId, ZtexDevice1.ztexProductId, filterType == null && filterSN == null, false, 1, null, 10, 0, 0, 0);
 
 				if (bus.numberOfDevices() <= 0) {
@@ -2061,8 +2692,9 @@ class BTCMiner implements MsgObj {
 					bus.printBus(System.out);
 					System.exit(0);
 				}
-				if (firmwareFile == null && !eraseFirmware)
+				if (firmwareFile == null && !eraseFirmware) {
 					throw new Exception("Parameter -f or -rf required in programming mode");
+				}
 
 				int imin = 0, imax = bus.numberOfDevices() - 1;
 				if (devNum >= 0) {
@@ -2075,15 +2707,13 @@ class BTCMiner implements MsgObj {
 				int j = 0;
 				for (int i = imin; i <= imax; i++) {
 					ZtexDevice1 dev = bus.device(i);
-					if ((filterSN == null || filterSN.equals(dev.snString())) &&
-					    (filterType == null || ((dev.productId(2) == 1) && filterType.equals(getType(dev)))) &&
-					    (filterType != null || filterSN != null || dev.productId(2) == 0))
-					{
+					if ((filterSN == null || filterSN.equals(dev.snString())) && (filterType == null || ((dev.productId(2) == 1) && filterType.equals(getType(dev)))) && (filterType != null || filterSN != null || dev.productId(2) == 0)) {
 						Ztex1v1 ztex = new Ztex1v1(dev);
-						if (snString != null && ihxFile != null)
+						if (snString != null && ihxFile != null) {
 							ihxFile.setSnString(snString);
-						else if (ztex.valid() && ihxFile != null)
+						} else if (ztex.valid() && ihxFile != null) {
 							ihxFile.setSnString(dev.snString());
+						}
 						if (eraseFirmware) {
 							ztex.eepromDisable();
 							System.out.println("EEPROM erased: " + ztex.toString());
@@ -2098,7 +2728,19 @@ class BTCMiner implements MsgObj {
 				}
 				System.out.println("\ntotal amount of (re-)programmed devices: " + j);
 			} else if (mode == 'c') {
-				new BTCMinerCluster(verbose, autoResetInterval);
+				cluster = new BTCMinerCluster();
+				cluster.run();
+			} else if (mode == 'h') {
+				try {
+					new BTCMinerHTTPD(httpdPortno, wwwroot);
+				} catch (IOException ioe) {
+					System.err.println("Couldn't start builtin HTTP server on port " + String.format("%d", httpdPortno) + "!\n" + ioe);
+					System.exit(-1);
+				}
+				System.out.println("Builtin HTTP server is running. Listening on port " + String.format("%d", httpdPortno) + ".");
+				cluster = new BTCMinerCluster();
+				cluster.run();
+				// try { System.in.read(); } catch(Throwable t) {}
 			}
 
 		} catch (Exception e) {
@@ -2109,7 +2751,6 @@ class BTCMiner implements MsgObj {
 			BTCMiner.newBlockMonitor.running = false;
 			BTCMiner.newBlockMonitor.interrupt();
 		}
-
 		System.exit(0);
 	}
 }
