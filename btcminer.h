@@ -115,7 +115,9 @@ __xdata WORD watchdog_cnt;
 ]
 
 
-#ifneq[TARGET_BOARD][1.15]
+#ifeq[TARGET_BOARD][1.15]
+__xdata BYTE prev_gn1, prev_gn2;
+#else
 __xdata BYTE OLD_IOC[NUMBER_OF_FPGAS];
 #define[PRE_FPGA_SELECT][PRE_FPGA_SELECT
     OLD_IOC[prev_select_num] = IOC;
@@ -257,6 +259,10 @@ void ep0_write_data () {
 	RD_CLK = !RD_CLK;
     }
     IOC0 = 0;    // reset off
+#ifeq[TARGET_BOARD][1.15]
+    prev_gn1 = 0;
+    prev_gn2 = 0;
+#endif    
 }
 
 ADD_EP0_VENDOR_COMMAND((0x80,,				
@@ -282,6 +288,9 @@ void ep0_read_data () {
 	EP0BUF[b] = IOB;
 	WR_CLK = !WR_CLK;
     }
+#ifeq[TARGET_BOARD][1.15]
+    prev_gn1 = EP0BUF[0];
+#endif    
     EP0BCH = 0;
     EP0BCL = SETUPDAT[6];
 }
@@ -341,10 +350,7 @@ ADD_EP0_VENDOR_COMMAND((0x84,,
 
 void main(void)	
 {
-    BYTE b;
-#ifneq[TARGET_BOARD][1.15]
-    BYTE c;
-#endif    
+    BYTE b, c;
 // init everything
     init_USB();
 
@@ -353,13 +359,26 @@ void main(void)
 	stopped[b] = 1;
     }
     
+#ifeq[TARGET_BOARD][1.15]
+    c = 0;
+    prev_gn1 = 0;
+    prev_gn2 = 0;
+#endif
+    
     while (1) {	
     
 	wait(10);
 
 #ifeq[TARGET_BOARD][1.15]
-        if ( is_ufm_1_15x )
-	    IOA0 = stopped[0] ? 1 : 0;
+        if ( is_ufm_1_15x ) {
+	    if ( prev_gn1 != prev_gn2 ) {
+		c = 25;
+		prev_gn2 = prev_gn1;
+	    }
+	    IOA0 = ( stopped[0] || c>0 ) ? 1 : 0;
+	    if ( c > 0 ) c--;
+	}
+		
 #endif
 
 	watchdog_cnt += 1;
