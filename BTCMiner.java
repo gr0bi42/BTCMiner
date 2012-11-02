@@ -2521,7 +2521,7 @@ class BTCMiner implements MsgObj {
 						if (i >= args.length) {
 							throw new Exception();
 						}
-						boolean state = rpcCount == 2 ? true : false;
+						boolean state = rpcCount == 0 ? true : false;
 						rpc[rpcCount] = new RPC(/*name*/args[i - 4], /*url*/args[i - 3], /*host*/args[i - 2], /*usr*/args[i - 1], /*pwd*/args[i], state);
 						rpcCount += 1;
 					} catch (Exception e) {
