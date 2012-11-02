@@ -80,7 +80,7 @@
 		};
 
 		function switchPool(id) {
-			var form = "<form><input type=hidden name=\"pool\" value=\"" + id + "\"></form>";
+			var form = "<form><input type=hidden name=\"pool\" value=\"" + id + "\"><input type=\"hidden\" name=\"force\" value=\"1\" /></form>";
 			$.post("/s_pool", $(form).serialize());
 			update();
 		};
