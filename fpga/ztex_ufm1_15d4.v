@@ -102,7 +102,7 @@ module ztex_ufm1_15d4 (fxclk_in, reset, clk_reset, pll_stop,  dcm_progclk, dcm_p
 		    inbuf_tmp[351:344] <= read_buf;
 		    inbuf_tmp[343:0] <= inbuf_tmp[351:8];
 		end;
-		inbuf <= inbuf_tmp;  // due to TIG's
+		inbuf <= inbuf_tmp;
 		    
 		if ( wr_start_b1 && wr_start_b2 )
 		begin

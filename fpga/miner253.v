@@ -65,13 +65,15 @@ module miner253 (clk, reset,  midstate, data,  golden_nonce, nonce2, hash2);
 
 		if ( reset_b3 )
 		begin
-		    golden_nonce <= 32'd0;
+		    golden_nonce1 <= 32'd0;
+		    golden_nonce2 <= 32'd0;
 		end 
 		else if ( is_golden_nonce ) 
     	        begin
-	    	    golden_nonce <= nonce2;
+	    	    golden_nonce1 <= nonce2;
+	    	    golden_nonce2 <= golden_nonce1;
 		end
-		
+
 		reset_b1 <= reset;
 		reset_b2 <= reset;
 		reset_b3 <= reset;

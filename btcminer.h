@@ -281,10 +281,10 @@ ADD_EP0_VENDOR_COMMAND((0x80,,
 /* *********************************************************************
    ***** EP0 vendor request 0x81 ***************************************
    ********************************************************************* */
-// read date from FPGA
+// read data from FPGA
 void ep0_read_data () {
     BYTE b;
-    for ( b=0; b<SETUPDAT[6]; b++ ) {
+    for ( b=0; b<ep0_payload_transfer; b++ ) {
 	EP0BUF[b] = IOB;
 	WR_CLK = !WR_CLK;
     }
@@ -292,7 +292,7 @@ void ep0_read_data () {
     prev_gn1 = EP0BUF[0];
 #endif    
     EP0BCH = 0;
-    EP0BCL = SETUPDAT[6];
+    EP0BCL = ep0_payload_transfer;
 }
 
 // read date from FPGA

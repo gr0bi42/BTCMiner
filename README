@@ -4,6 +4,13 @@ You can find more info at the ZTEX BTCMiner homepage: http://www.ztex.de/btcmine
 
 Changes
 =======
+02 Nov 2012:
+- Upd: update to BTCMiner Release 121017
+- Chg: target checking tweaks
+- New: RPC object introduced (to be further improved)
+- New: Fancy looking webinterface
+- Rmv: builtin webpages /pools /miner
+
 31 Jul 2012:
 - Upd: update to BTCMiner Release 120703
 - New: builtin http server based on NanoHTTPD (http://elonen.iki.fi/code/nanohttpd/)
@@ -30,15 +37,15 @@ Successfully done on Ubuntu 11.04
 install Java
 install sdcc
 checkout this git repository
-download and install ZTEX EZ-USB FX2 SDK (in the directory BTCMiner/ztex)
+always download and install the latest ZTEX EZ-USB FX2 SDK (in the directory BTCMiner/ztex)
 make
 Result => ZtexBTCMiner.jar
 
 Example (2 pools, 1 backup pool):
 ---------------------------------
-java -cp ZtexBTCMiner.jar BTCMiner -m h -id fpga1 -p 8001 -o Deepbit http://pit.deepbit.net:8332 user pass -o Slush http://api.bitcoin.cz:8332 user pass -b Eligius http://ra.mining.eligius.st:8337 1Btf3BqUegfe5iFdWsgfBf1Ew3YsAvsrLT x
+java -cp ZtexBTCMiner.jar BTCMiner -m h -id fpga1 -p 8001 -tc -o Deepbit https://deepbit.net/stats http://pit.deepbit.net:8332 user pass -o Slush https://mining.bitcoin.cz/stats/ http://api.bitcoin.cz:8332 user pass -b Ozcoin http://ozco.in http://eu.ozco.in:80 user pass
 
-URL to open in browser: http://<your ip address here>:8001/pools
+URL to open in browser: http://<your ip address here>:8001
 
 
 

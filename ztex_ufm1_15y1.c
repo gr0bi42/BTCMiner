@@ -22,7 +22,7 @@
 #define[EXTRA_SOLUTIONS][1]
 #define[OFFS_NONCES][0]
 #define[F_MULT][50]
-//#define[F_MULT][57]
+//#define[F_MULT][54]
 //#define[F_MAX_MULT][54]
 #define[F_MAX_MULT][62]
 #define[HASHES_PER_CLOCK][128]
