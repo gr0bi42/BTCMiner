@@ -1,0 +1,135 @@
+body {
+	font: 11px "lucida grande",  verdana, tahoma, sans-serif;
+	color: #333;
+	background-color: #e7e9eb;
+	margin: 0;
+	padding: 0;
+	text-align: center;
+}
+img { border:0; }
+a, a:link, a:visited, a:active, a:focus { color:#333; text-decoration:none; }
+a:hover { text-decoration:underline; }
+input {
+	font: 11px "lucida grande",  verdana, tahoma, sans-serif;
+	color: #333;
+	border: solid 1px #aaa;
+	outline: 0;
+	width: 90%;  
+	padding: 1px;  
+}
+input[type="button"]:hover { background-color: #369; color: #fff; }
+#container {
+	text-align: left;
+	margin: 5px auto 0 auto;
+	background-color: transparent;
+	width: 90%;
+}
+#footer {
+	text-align: center;
+	margin: 20px 0 5px 0;
+	padding: 0;
+	background-color: transparent;
+	color: #666;
+}
+.headerbox {
+	text-align: right;
+	height: 90px;
+	background: #fff url("../images/bitcoin.png") top left no-repeat;
+	border: solid #aaa 1px;
+	margin: 0;
+	padding: 0px 8px 0 80px;
+}
+.poolbox {
+	margin: 5px 0 0 0;
+	padding: 0 5px 3px 5px;
+	background-color: #fff;
+	border: solid #aaa 1px;
+}
+h1 {
+	color: #369;
+	font-size: 20px;
+}
+h1#header2 {
+	border-bottom: dotted #aaa 1px;
+	margin: 0 0 3px 0;
+	padding: 28px 0 3px 0;
+}
+h1#header2 a {
+	color: #369;
+}
+h2 {
+	color: #369;
+	font-size: 18px;
+}
+h2.pool {
+	border-bottom: dotted #aaa 1px;
+	margin: 20px 1px 9px 1px;
+	padding: 0 0 3px 0;
+}
+table {
+	border-spacing: 1px;
+	margin: 0 0 5px 0;
+	table-layout: fixed;
+	border: 0;
+	empty-cells: show;
+	width: 100%;
+}
+th {
+	text-align: center;
+	background-color: #ddd;
+	border: dotted #aaa 1px;
+}
+tr.tr2 {
+	background-color: #f4f4f4;
+}
+tr.tr3 {
+	background-color: #e4ffe4;
+	font-weight: bold;
+}
+tr.tr4 {
+	background-color: #f66;
+}
+th.fix6 {
+	width: 60px;
+}
+td.fix6 {
+	text-align: center;
+	width: 60px;
+}
+th.fix10 {
+	width: 100px;
+}
+td.fix10 {
+	text-align: center;
+	width: 100px;
+}
+ul#tabs {
+	text-align: center;
+	margin: 0 0 12px 0;
+	padding: 2px 0 0 0;
+}
+ul#tabs li {
+	display: inline;
+	list-style-type: none;
+	margin: 0 2px 0 2px;
+}
+ul#tabs li a {
+	color: #999;
+	background-color: #ccc;
+	border: 1px solid #aaa;
+	padding: 2px 32px 4px 32px;
+}
+ul#tabs li a:hover {
+	color: #666;
+	background-color: #aaa;
+	text-decoration: none;
+}
+ul#tabs li a.selected {
+	color: #369;
+	background-color: #fff;
+	font-weight: bold;
+	border-top: none;
+	border-bottom: solid #963 2px;
+	padding: 3px 32px 4px 32px;
+}
+div.tabc.hide { display: none; }

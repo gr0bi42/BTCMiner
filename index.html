@@ -1,0 +1,293 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<style type="text/css" media="all">@import "css/btcminer.css";</style>
+	<script type="text/javascript" src="http://code.jquery.com/jquery-1.8.2.min.js"></script>
+	<script type="text/javascript">
+		// Javascript TABS stuff http://www.elated.com/articles/javascript-tabs/
+		var tabLinks = new Array();
+		var contentDivs = new Array();
+
+		function tabsInit() {
+			var tabListItems = document.getElementById('tabs').childNodes;
+			for (var i=0; i<tabListItems.length; i++) {
+				if (tabListItems[i].nodeName == "LI") {
+					var tabLink = getFirstChildWithTagName(tabListItems[i], 'A');
+					var id = getHash(tabLink.getAttribute('href'));
+					tabLinks[id] = tabLink;
+					contentDivs[id] = document.getElementById(id);
+				}
+			}
+			var i = 0;
+			for (var id in tabLinks) {
+				tabLinks[id].onclick = showTab;
+				tabLinks[id].onfocus = function() {this.blur()};
+				if (i == 0) tabLinks[id].className = 'selected';
+				i++;
+			}
+			var i = 0;
+			for (var id in contentDivs) {
+				if (i != 0) contentDivs[id].className = 'tabc hide';
+				i++;
+			}
+		}
+
+		function showTab() {
+			var selectedId = getHash(this.getAttribute('href'));
+			for (var id in contentDivs) {
+				if (id == selectedId) {
+					tabLinks[id].className = 'selected';
+					contentDivs[id].className = 'tabc';
+				} else {
+					tabLinks[id].className = '';
+					contentDivs[id].className = 'tabc hide';
+				}
+			}
+			return false;
+		}
+
+		function getFirstChildWithTagName(element, tagName) {
+			for (var i=0; i<element.childNodes.length; i++) {
+				if (element.childNodes[i].nodeName == tagName) return element.childNodes[i];
+			}
+		}
+
+		function getHash(url) {
+			var hashPos = url.lastIndexOf('#');
+			return url.substring(hashPos + 1);
+		}
+
+
+		// BTCMiner stuff
+		var updateTimerId;
+
+		function secondsToString(seconds) {
+			var numdays = Math.floor(seconds / 86400);
+			var numhours = Math.floor((seconds % 86400) / 3600);
+			var numminutes = Math.floor(((seconds % 86400) % 3600) / 60);
+			var numseconds = ((seconds % 86400) % 3600) % 60;
+			if (numdays > 0) {
+				return numdays + "d:" + numhours + "h:" + numminutes + "m:" + numseconds + "s";
+			} else {
+				if (numhours > 0) {
+					return numhours + "h:" + numminutes + "m:" + numseconds + "s";
+				} else {
+					return numminutes + "m:" + numseconds + "s";
+				}
+			}
+		};
+
+		function switchPool(id) {
+			var form = "<form><input type=hidden name=\"pool\" value=\"" + id + "\"></form>";
+			$.post("/s_pool", $(form).serialize());
+			update();
+		};
+
+		function submitRPC(form) {
+			var newform = "<form>";
+			newform += "<input type=\"hidden\" name=\"pool\" value=\"" + form.pool.value + "\" />";
+			newform += "<input type=\"text\" name=\"rpcname\" value=\"" + form.rpcname.value + "\" />";
+			newform += "<input type=\"text\" name=\"rpcurl\" value=\"" + form.rpcurl.value + "\" />";
+			newform += "<input type=\"text\" name=\"rpchost\" value=\"" + form.rpchost.value + "\" />";
+			newform += "<input type=\"text\" name=\"rpcusr\" value=\"" + form.rpcusr.value + "\" />";
+			newform += "<input type=\"text\" name=\"rpcpwd\" value=\"" + form.rpcpwd.value + "\" />";
+			newform += "</form>";
+			$.post("/s_rpc", $(newform).serialize());
+			update();
+		};
+
+		function setRefresh(tmo) {
+			var form = "<form><input type=hidden name=\"refresh\" value=\"" + tmo + "\"></form>";
+			$.post("/s_refresh", $(form).serialize());
+			update();
+		};
+
+		function mkTable1(id, phdr, servers, colorize) {
+			var html = "";
+			html += "<div class=\"poolbox\">"
+			html += "<h2 class=\"pool\">" + phdr + " (" + servers.length + ")</h2>";
+			html += "<table>";
+			html += "<tr>";
+				html += "<th class=\"fix6\">#</th>";
+				html += "<th>Pool</th>";
+				html += "<th class=\"fix10\">Getwork</th>";
+				html += "<th class=\"fix10\">Accepted</th>";
+				html += "<th class=\"fix10\">Rejected</th>";
+				html += "<th class=\"fix6\">Difficulty</th>";
+			html += "</tr>";
+			for (var i=0; i<servers.length; i++) {
+				var sa = parseInt(servers[i]["accept"]);
+				var sr = parseInt(servers[i]["reject"]);
+				var pr = 0.0;
+
+				if (sa > 0) {
+					pr = (100.0 * sr) / sa;
+				}
+
+				var enabled = servers[i]["state"] == "enabled";
+				if (colorize && enabled) {
+					html += "<tr class=\"tr3\">";
+				} else {
+					if ((i % 2) == 0) {
+						html += "<tr>";
+					} else {
+						html += "<tr class=\"tr2\">";
+					}
+				}
+				var poolid = parseInt(servers[i]["index"]);
+				if (!enabled) {
+					html += "<td class=\"fix6\"><a href=\"#\" onClick=\"javascript:switchPool(" + poolid + ");\">" + poolid + "</a></td>";
+				} else {
+					html += "<td class=\"fix6\">" + poolid + "</td>";
+				}
+				html += "<td><a href=\"" + servers[i]["url"] + "\" target=\"_blank\">"+ servers[i]["name"] + "</td>";
+				html += "<td class=\"fix10\">" + servers[i]["getwork"] + "</td>";
+				html += "<td class=\"fix10\">" + sa + "</td>";
+				html += "<td class=\"fix10\">" + sr + " / " + pr.toFixed(2) + "%</td>";
+				html += "<td class=\"fix6\">" + servers[i]["difficulty"] + "</td>";
+				html += "</tr>";
+			}
+			html += "</table></div>";
+			$(id).html(html);
+		};
+
+		function mkTable2(id, phdr, miners) {
+			var html = "";
+			html += "<div class=\"poolbox\">"
+			html += "<h2 class=\"pool\">" + phdr + " (" + miners.length + ")</h2>";
+			html += "<table>";
+			html += "<tr>";
+				html += "<th class=\"fix6\">#</th>";
+				html += "<th>Miner</th>";
+				html += "<th class=\"fix10\">Frequency</th>";
+				html += "<th class=\"fix10\">Hashrate</th>";
+				html += "<th class=\"fix10\">Error</th>";
+				html += "<th class=\"fix10\">MaxError</th>";
+				html += "<th class=\"fix10\">Shares</th>";
+				html += "<th class=\"fix10\">Luck</th>";
+			html += "</tr>";
+			for (var i=0; i<miners.length; i++) {
+				var running = miners[i]["state"] == "running";
+				if (running) {
+					if ((i % 2) == 0) {
+						html += "<tr>";
+					} else {
+						html += "<tr class=\"tr2\">";
+					}
+					html += "<td class=\"fix6\">" + (i + 1) + "</td>";
+					html += "<td>" + miners[i]["name"] + "</td>";
+					html += "<td class=\"fix10\">" + miners[i]["frequency"] + "MHz</td>";
+					html += "<td class=\"fix10\">" + miners[i]["hashrate"] + "MH/s</td>";
+					html += "<td class=\"fix10\">" + miners[i]["errorrate"] + "%</td>";
+					html += "<td class=\"fix10\">" + miners[i]["maxerrorrate"] + "%</td>";
+					html += "<td class=\"fix10\">" + miners[i]["shares"] + "</td>";
+					html += "<td class=\"fix10\">" + miners[i]["luck"] + "</td>";
+					html += "</tr>";
+				} else {
+					html += "<tr class=\"tr4\">";
+					html += "<td class=\"fix6\">" + (i + 1) + "</td>";
+					html += "<td colspan=\"7\">" + miners[i]["name"] + "&nbsp;:&nbsp;" + miners[i]["state"] + "</td>";
+					html += "</tr>";
+				}
+			}
+			html += "</table></div>";
+			$(id).html(html);
+		};
+		function mkTable3(id, phdr, servers) {
+			var html = "";
+			html += "<div class=\"poolbox\">"
+			html += "<h2 class=\"pool\">" + phdr + " (" + servers.length + ")</h2>";
+			html += "<table>";
+			html += "<tr>";
+				html += "<th class=\"fix6\">#</th>";
+				html += "<th>Name</th>";
+				html += "<th>Website</th>";
+				html += "<th>URL</th>";
+				html += "<th>Username</th>";
+				html += "<th>Password</th>";
+				html += "<th class=\"fix10\">Action</th>";
+			html += "</tr>";
+			for (var i=0; i<servers.length; i++) {
+				var poolid = parseInt(servers[i]["index"]);
+				html += "<form><input type=\"hidden\" name=\"pool\" value=\"" + poolid + "\" />";
+				if ((i % 2) == 0) {
+					html += "<tr>";
+				} else {
+					html += "<tr class=\"tr2\">";
+				}
+				html += "<td class=\"fix6\">" + poolid + "</td>";
+				html += "<td align=\"center\"><input type=\"text\" name=\"rpcname\" value=\"" + servers[i]["name"] + "\" /></td>";
+				html += "<td align=\"center\"><input type=\"text\" name=\"rpcurl\" value=\"" + servers[i]["url"] + "\" /></td>";
+				html += "<td align=\"center\"><input type=\"text\" name=\"rpchost\" value=\"" + servers[i]["host"] + "\" /></td>";
+				html += "<td align=\"center\"><input type=\"text\" name=\"rpcusr\" value=\"" + servers[i]["user"] + "\" /></td>";
+				html += "<td align=\"center\"><input type=\"text\" name=\"rpcpwd\" value=\"" + servers[i]["pass"] + "\" /></td>";
+				html += "<td class=\"fix10\"><input type=\"button\" value=\"Save\" onClick=\"javascript:submitRPC(this.form)\"/></td>";
+				html += "</tr></form>";
+			}
+			html += "</table></div>";
+			$(id).html(html);
+		};
+		function update() {
+			clearTimeout(updateTimerId);
+			$.getJSON('/json', function(data) {
+				document.title = data["id"];
+				$("#header2").html("<a href=\"#\" onclick=\"javascript:update();\">" + data["id"] + "@" + data["host"] + "</a>");
+				$("#headerstat").html("Total: " + data["total_hashrate"] + "MH/s, Submitted " + data["submitted_hashrate"] + "MH/s<br />Uptime: " + secondsToString(data["uptime"]));
+				mkTable1("#ptable", "Mining Pools", data["server"], true);
+				mkTable1("#btable", "Backup Pools", data["backup_server"], false);
+				mkTable2("#mtable", "Miner", data["miner"]);
+				mkTable3("#rptable", "Mining Pools", data["server"]);
+				mkTable3("#rbtable", "Backup Pools", data["backup_server"]);
+				var refresh = "disabled";
+				var tmo = parseInt(data["refresh"]);
+				if (tmo > 0 && tmo <= 3600) {
+					updateTimerId = setTimeout("update()", tmo * 1000);
+					refresh = "every " + tmo + " seconds";
+				}
+				$("#footerdyn").html("Automatically page refresh: " + refresh + "&nbsp;-&nbsp;Page generated: " + data["date"]);
+			});
+		}
+		$(document).ready(function() {
+			tabsInit();
+			update();
+		});
+	</script>
+</head>
+<body>
+<div id="container">
+	<div class="headerbox">
+		<h1 id="header2"></h1>
+		<div id="headerstat"></div>
+	</div>
+	<ul id="tabs">
+		<li><a href="#pools">Pools</a></li>  
+		<li><a href="#miner">Miner</a></li>  
+		<li><a href="#rpc"> RPC </a></li>  
+		<li><a href="#admin">Admin</a></li>
+	</ul>
+	<div id="pools" class="tabc">
+		<div id="ptable"></div>
+		<div id="btable"></div>
+	</div>
+	<div id="miner" class="tabc">
+		<div id="mtable"></div>
+	</div>
+	<div id="rpc" class="tabc">
+		<div id="rptable"></div>
+		<div id="rbtable"></div>
+	</div>
+	<div id="admin" class="tabc">
+		<div class="poolbox">
+			<h2 class="pool">Administration</h2>
+			<p />Automatically page refresh: <a href="#" onclick="javascript:setRefresh(0);">Off</a>, <a href="#" onclick="javascript:setRefresh(5);">5sec</a>, <a href="#" onclick="javascript:setRefresh(10);">10sec</a>, <a href="#" onclick="javascript:setRefresh(15);">15sec</a>, <a href="#" onclick="javascript:setRefresh(20);">20sec</a>, <a href="#" onclick="javascript:setRefresh(30);">30sec</a>, <a href="#" onclick="javascript:setRefresh(60);">1min</a>, <a href="#" onclick="javascript:setRefresh(300);">5min</a>
+		</div>
+	</div>
+	<div id="footer">
+		<div id="footerdyn"></div>
+		<p />Donations are welcome <a href=\"bitcoin:1Btf3BqUegfe5iFdWsgfBf1Ew3YsAvsrLT\">1Btf3BqUegfe5iFdWsgfBf1Ew3YsAvsrLT</a> :-)
+	</div>
+</div>
+</body>
+</html>
