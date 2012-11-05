@@ -104,6 +104,12 @@
 			update();
 		};
 
+		function setFlag( name, value) {
+			var form = "<form><input type=hidden name=\"" + name + "\" value=\"" + value + "\"></form>";
+			$.post("/s_flag", $(form).serialize());
+			update();
+		};
+
 		function mkTable1(id, phdr, servers, colorize) {
 			var html = "";
 			html += "<div class=\"poolbox\">"
@@ -246,7 +252,30 @@
 					updateTimerId = setTimeout("update()", tmo * 1000);
 					refresh = "every " + tmo + " seconds";
 				}
-				$("#footerdyn").html("Automatically page refresh: " + refresh + "&nbsp;-&nbsp;Page generated: " + data["date"]);
+				var ahtml = "<table><tr><th>Property</th><th>Value</th></tr><tr><td>Automatically page refresh</td><td><form><select name=\"refresh\" onChange=\"javascript:setRefresh(this.options[this.selectedIndex].value)\">"
+				var itemsTmo = { 0:"Off", 5:"5sec", 10:"10sec", 15:"15sec", 20:"20sec", 30:"30sec", 60:"1min", 120:"2min", 300:"5min" };
+				for (var idx in itemsTmo) {
+					if (idx == tmo) {
+						ahtml += "<option value=\"" + idx + "\" selected=\"selected\">" + itemsTmo[idx] + "</option>";
+					} else {
+						ahtml += "<option value=\"" + idx + "\">" + itemsTmo[idx] + "</option>";
+					}
+				}
+				ahtml += "</select></form></td></tr><tr class=\"tr2\"><td>Target checking</td><td><form><select name=\"targetcheck\" onChange=\"javascript:setFlag(this.name, this.options[this.selectedIndex].value)\">"
+				if (parseInt(data["target_check"]) == 1) {
+					ahtml += "<option value=\"0\">disabled</option><option value=\"1\" selected=\"selected\">enabled</option>";
+				} else {
+					ahtml += "<option value=\"0\" selected=\"selected\">disabled</option><option value=\"1\">enabled</option>";
+				}
+				ahtml += "</select></form></td></tr><tr><td>Remote switching</td><td><form><select name=\"remoteswitch\" onChange=\"javascript:setFlag(this.name, this.options[this.selectedIndex].value)\">"
+				if (parseInt(data["remote_switch"]) == 1) {
+					ahtml += "<option value=\"0\">disabled</option><option value=\"1\" selected=\"selected\">enabled</option>";
+				} else {
+					ahtml += "<option value=\"0\" selected=\"selected\">disabled</option><option value=\"1\">enabled</option>";
+				}
+				ahtml += "</select></form></td></tr></table>";
+				$("#admindyn").html(ahtml);
+				$("#footerdyn").html("Page refresh: " + refresh + "&nbsp;-&nbsp;Page generated: " + data["date"]);
 			});
 		}
 		$(document).ready(function() {
@@ -281,7 +310,7 @@
 	<div id="admin" class="tabc">
 		<div class="poolbox">
 			<h2 class="pool">Administration</h2>
-			<p />Automatically page refresh: <a href="#" onclick="javascript:setRefresh(0);">Off</a>, <a href="#" onclick="javascript:setRefresh(5);">5sec</a>, <a href="#" onclick="javascript:setRefresh(10);">10sec</a>, <a href="#" onclick="javascript:setRefresh(15);">15sec</a>, <a href="#" onclick="javascript:setRefresh(20);">20sec</a>, <a href="#" onclick="javascript:setRefresh(30);">30sec</a>, <a href="#" onclick="javascript:setRefresh(60);">1min</a>, <a href="#" onclick="javascript:setRefresh(300);">5min</a>
+			<div id="admindyn"></div>
 		</div>
 	</div>
 	<div id="footer">

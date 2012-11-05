@@ -33,7 +33,7 @@ import ztex.*;
 class BTCMinerHTTPD extends NanoHTTPD {
 	private File myRootDir;
 	private int refreshTmo = 30;
-	private boolean hopping = true;
+	private boolean remoteSwitching = true;
 
 	// ******* Constructor
 	// *************************************************************************
@@ -45,19 +45,28 @@ class BTCMinerHTTPD extends NanoHTTPD {
 	// ******* Response
 	// *************************************************************************
 	public Response serve(String uri, String method, Properties header, Properties parms, Properties files) {
+		Response rsp;
 		if (uri.equalsIgnoreCase("/json")) {
-			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveJson(uri, header));
+			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_JSON, serveJson(uri, header));
+			return rsp;
 		} else if (uri.equalsIgnoreCase("/s_pool")) {
-			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectPool(parms));
+			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectPool(parms));
+			return rsp;
 		} else if (uri.equalsIgnoreCase("/s_refresh")) {
-			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectRefresh(parms));
+			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectRefresh(parms));
+			return rsp;
 		} else if (uri.equalsIgnoreCase("/s_rpc")) {
-			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectRPC(parms));
-		} else if (uri.equalsIgnoreCase("/t_hopping")) {
-			return new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveToggleHopping(parms));
+			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectRPC(parms));
+			return rsp;
+		} else if (uri.equalsIgnoreCase("/s_flag")) {
+			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSetFlag(parms));
+			return rsp;
 		} else {
-			return serveFile(uri, header, myRootDir, true);
+			rsp = serveFile(uri, header, myRootDir, true);
 		}
+		rsp.addHeader("Cache-Control", "no-cache");
+		rsp.addHeader("Pragma", "no-cache");
+		return rsp;
 	}
 
 	// ******* serveJson
@@ -151,6 +160,16 @@ class BTCMinerHTTPD extends NanoHTTPD {
 			sb.append("]");
 			sb.append(", \"total_hashrate\":\"" + String.format("%.1f", hashrate_total) + "\"");
 			sb.append(", \"submitted_hashrate\":\"" + String.format("%.1f", hashrate_submitted) + "\"");
+			if (remoteSwitching) {
+				sb.append(", \"remote_switch\":\"1\"");
+			} else {
+				sb.append(", \"remote_switch\":\"0\"");
+			}
+			if (BTCMiner.getTargetCheck()) {
+				sb.append(", \"target_check\":\"1\"");
+			} else {
+				sb.append(", \"target_check\":\"0\"");
+			}
 		}
 
 		sb.append("}");
@@ -166,7 +185,7 @@ class BTCMinerHTTPD extends NanoHTTPD {
 				force = true;
 			}
 
-			if (hopping || force) {
+			if (remoteSwitching || force) {
 				int newpool = Integer.parseInt(parms.getProperty("pool"));
 				int server = BTCMiner.rpcCount;
 				int backup1 = BTCMiner.rpcFirstBackup;
@@ -223,13 +242,23 @@ class BTCMinerHTTPD extends NanoHTTPD {
 		return msg;
 	}
 
-	// ******* serveToggleHopping
+	// ******* serveSetFlag
 	// *************************************************************************
-	private String serveToggleHopping(Properties parms) {
-		if (hopping) {
-			hopping = false;
-		} else {
-			hopping = true;
+	private String serveSetFlag(Properties parms) {
+		if (parms.getProperty("remoteswitch") != null) {
+			int value = Integer.parseInt(parms.getProperty("remoteswitch"));
+			if (value == 0) {
+				remoteSwitching = false;
+			} else {
+				remoteSwitching = true;
+			}
+		} else if (parms.getProperty("targetcheck") != null) {
+			int value = Integer.parseInt(parms.getProperty("targetcheck"));
+			if (value == 0) {
+				BTCMiner.setTargetCheck(false);
+			} else {
+				BTCMiner.setTargetCheck(true);
+			}
 		}
 		String msg;
 		if (parms.getProperty("uri") != null) {
@@ -516,8 +545,8 @@ class BTCMinerThread extends Thread {
 		synchronized (miners) {
 			miners.add(m);
 /* xxx
-*/
 			m.name = busName + ": " + m.name;
+*/
 		}
 
 		if (pollLoop == null) {
@@ -1423,6 +1452,8 @@ class BTCMiner implements MsgObj {
 		intToData(H + dataToInt(state, state_offs + 28), out, out_offs + 28);
 	}
 
+	// ******* printBus
+	// *************************************************************************
 	public static void printBus (ZtexScanBus1 bus) {
 		for (int i=0; i<bus.numberOfDevices(); i++) {
 			ZtexDevice1 dev = bus.device(i);
@@ -1435,6 +1466,21 @@ class BTCMiner implements MsgObj {
 			}
 		}
 	}
+
+	// ******* getTargetCheck
+	// *************************************************************************
+	public static boolean getTargetCheck() {
+		return targetCheck;
+	}
+
+	// ******* setTargetCheck
+	// *************************************************************************
+	public static void setTargetCheck(boolean value) {
+		targetCheck = value;
+	}
+
+
+
 
 	// ******* non-static methods
 	// *************************************************************************
@@ -2521,7 +2567,7 @@ class BTCMiner implements MsgObj {
 						if (i >= args.length) {
 							throw new Exception();
 						}
-						boolean state = rpcCount == 0 ? true : false;
+						boolean state = rpcCount == 2 ? true : false;
 						rpc[rpcCount] = new RPC(/*name*/args[i - 4], /*url*/args[i - 3], /*host*/args[i - 2], /*usr*/args[i - 1], /*pwd*/args[i], state);
 						rpcCount += 1;
 					} catch (Exception e) {

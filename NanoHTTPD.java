@@ -203,6 +203,7 @@ public class NanoHTTPD
 		MIME_PLAINTEXT = "text/plain",
 		MIME_HTML = "text/html",
 		MIME_DEFAULT_BINARY = "application/octet-stream",
+		MIME_JSON = "application/json",
 		MIME_XML = "text/xml";
 
 	// ==================================================
