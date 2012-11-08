@@ -82,7 +82,7 @@
 		function switchPool(id) {
 			var form = "<form><input type=hidden name=\"pool\" value=\"" + id + "\"><input type=\"hidden\" name=\"force\" value=\"1\" /></form>";
 			$.post("/s_pool", $(form).serialize());
-			update();
+			updateDyn();
 		};
 
 		function submitRPC(form) {
@@ -96,18 +96,14 @@
 			newform += "</form>";
 			$.post("/s_rpc", $(newform).serialize());
 			update();
+			updateDyn();
 		};
 
-		function setRefresh(tmo) {
-			var form = "<form><input type=hidden name=\"refresh\" value=\"" + tmo + "\"></form>";
-			$.post("/s_refresh", $(form).serialize());
-			update();
-		};
-
-		function setFlag( name, value) {
+		function setValue(action, name, value) {
 			var form = "<form><input type=hidden name=\"" + name + "\" value=\"" + value + "\"></form>";
-			$.post("/s_flag", $(form).serialize());
+			$.post(action, $(form).serialize());
 			update();
+			updateDyn();
 		};
 
 		function mkTable1(id, phdr, servers, colorize) {
@@ -116,7 +112,7 @@
 			html += "<h2 class=\"pool\">" + phdr + " (" + servers.length + ")</h2>";
 			html += "<table>";
 			html += "<tr>";
-				html += "<th class=\"fix6\">#</th>";
+				html += "<th class=\"fix4\">#</th>";
 				html += "<th>Pool</th>";
 				html += "<th class=\"fix10\">Getwork</th>";
 				html += "<th class=\"fix10\">Accepted</th>";
@@ -144,9 +140,9 @@
 				}
 				var poolid = parseInt(servers[i]["index"]);
 				if (!enabled) {
-					html += "<td class=\"fix6\"><a href=\"#\" onClick=\"javascript:switchPool(" + poolid + ");\">" + poolid + "</a></td>";
+					html += "<td class=\"fix4\"><a href=\"#\" onClick=\"javascript:switchPool(" + poolid + ");\">" + poolid + "</a></td>";
 				} else {
-					html += "<td class=\"fix6\">" + poolid + "</td>";
+					html += "<td class=\"fix4\">" + poolid + "</td>";
 				}
 				html += "<td><a href=\"" + servers[i]["url"] + "\" target=\"_blank\">"+ servers[i]["name"] + "</td>";
 				html += "<td class=\"fix10\">" + servers[i]["getwork"] + "</td>";
@@ -165,14 +161,14 @@
 			html += "<h2 class=\"pool\">" + phdr + " (" + miners.length + ")</h2>";
 			html += "<table>";
 			html += "<tr>";
-				html += "<th class=\"fix6\">#</th>";
+				html += "<th class=\"fix4\">#</th>";
 				html += "<th>Miner</th>";
 				html += "<th class=\"fix10\">Frequency</th>";
 				html += "<th class=\"fix10\">Hashrate</th>";
-				html += "<th class=\"fix10\">Error</th>";
-				html += "<th class=\"fix10\">MaxError</th>";
-				html += "<th class=\"fix10\">Shares</th>";
-				html += "<th class=\"fix10\">Luck</th>";
+				html += "<th class=\"fix6\">Error</th>";
+				html += "<th class=\"fix6\">MaxError</th>";
+				//html += "<th class=\"fix6\">Shares</th>";
+				html += "<th class=\"fix6\">Luck</th>";
 			html += "</tr>";
 			for (var i=0; i<miners.length; i++) {
 				var running = miners[i]["state"] == "running";
@@ -182,19 +178,19 @@
 					} else {
 						html += "<tr class=\"tr2\">";
 					}
-					html += "<td class=\"fix6\">" + (i + 1) + "</td>";
+					html += "<td class=\"fix4\">" + (i + 1) + "</td>";
 					html += "<td>" + miners[i]["name"] + "</td>";
 					html += "<td class=\"fix10\">" + miners[i]["frequency"] + "MHz</td>";
 					html += "<td class=\"fix10\">" + miners[i]["hashrate"] + "MH/s</td>";
-					html += "<td class=\"fix10\">" + miners[i]["errorrate"] + "%</td>";
-					html += "<td class=\"fix10\">" + miners[i]["maxerrorrate"] + "%</td>";
-					html += "<td class=\"fix10\">" + miners[i]["shares"] + "</td>";
-					html += "<td class=\"fix10\">" + miners[i]["luck"] + "</td>";
+					html += "<td class=\"fix6\">" + miners[i]["errorrate"] + "%</td>";
+					html += "<td class=\"fix6\">" + miners[i]["maxerrorrate"] + "%</td>";
+					//html += "<td class=\"fix6\">" + miners[i]["shares"] + "</td>";
+					html += "<td class=\"fix6\">" + miners[i]["luck"] + "</td>";
 					html += "</tr>";
 				} else {
 					html += "<tr class=\"tr4\">";
 					html += "<td class=\"fix6\">" + (i + 1) + "</td>";
-					html += "<td colspan=\"7\">" + miners[i]["name"] + "&nbsp;:&nbsp;" + miners[i]["state"] + "</td>";
+					html += "<td colspan=\"6\">" + miners[i]["name"] + "&nbsp;:&nbsp;" + miners[i]["state"] + "</td>";
 					html += "</tr>";
 				}
 			}
@@ -205,16 +201,14 @@
 			var html = "";
 			html += "<div class=\"poolbox\">"
 			html += "<h2 class=\"pool\">" + phdr + " (" + servers.length + ")</h2>";
-			html += "<table>";
-			html += "<tr>";
-				html += "<th class=\"fix6\">#</th>";
-				html += "<th>Name</th>";
-				html += "<th>Website</th>";
-				html += "<th>URL</th>";
-				html += "<th>Username</th>";
-				html += "<th>Password</th>";
-				html += "<th class=\"fix10\">Action</th>";
-			html += "</tr>";
+			html += "<table><tr>";
+			html += "<th class=\"fix4\">#</th>";
+			html += "<th>Name</th>";
+			html += "<th>Website</th>";
+			html += "<th>URL</th>";
+			html += "<th>Username</th>";
+			html += "<th>Password</th>";
+			html += "<th class=\"fix10\">Action</th></tr>";
 			for (var i=0; i<servers.length; i++) {
 				var poolid = parseInt(servers[i]["index"]);
 				html += "<form><input type=\"hidden\" name=\"pool\" value=\"" + poolid + "\" />";
@@ -223,7 +217,7 @@
 				} else {
 					html += "<tr class=\"tr2\">";
 				}
-				html += "<td class=\"fix6\">" + poolid + "</td>";
+				html += "<td class=\"fix4\">" + poolid + "</td>";
 				html += "<td align=\"center\"><input type=\"text\" name=\"rpcname\" value=\"" + servers[i]["name"] + "\" /></td>";
 				html += "<td align=\"center\"><input type=\"text\" name=\"rpcurl\" value=\"" + servers[i]["url"] + "\" /></td>";
 				html += "<td align=\"center\"><input type=\"text\" name=\"rpchost\" value=\"" + servers[i]["host"] + "\" /></td>";
@@ -235,24 +229,30 @@
 			html += "</table></div>";
 			$(id).html(html);
 		};
-		function update() {
+		function updateDyn() {
 			clearTimeout(updateTimerId);
 			$.getJSON('/json', function(data) {
-				document.title = data["id"];
-				$("#header2").html("<a href=\"#\" onclick=\"javascript:update();\">" + data["id"] + "@" + data["host"] + "</a>");
 				$("#headerstat").html("Total: " + data["total_hashrate"] + "MH/s, Submitted " + data["submitted_hashrate"] + "MH/s<br />Uptime: " + secondsToString(data["uptime"]));
 				mkTable1("#ptable", "Mining Pools", data["server"], true);
 				mkTable1("#btable", "Backup Pools", data["backup_server"], false);
 				mkTable2("#mtable", "Miner", data["miner"]);
-				mkTable3("#rptable", "Mining Pools", data["server"]);
-				mkTable3("#rbtable", "Backup Pools", data["backup_server"]);
 				var refresh = "disabled";
 				var tmo = parseInt(data["refresh"]);
 				if (tmo > 0 && tmo <= 3600) {
-					updateTimerId = setTimeout("update()", tmo * 1000);
+					updateTimerId = setTimeout("updateDyn()", tmo * 1000);
 					refresh = "every " + tmo + " seconds";
 				}
-				var ahtml = "<table><tr><th>Property</th><th>Value</th></tr><tr><td>Automatically page refresh</td><td><form><select name=\"refresh\" onChange=\"javascript:setRefresh(this.options[this.selectedIndex].value)\">"
+				$("#footerdyn").html("Page refresh: " + refresh + "&nbsp;-&nbsp;Page generated: " + data["date"]);
+			});
+		}
+		function update() {
+			$.getJSON('/json', function(data) {
+				document.title = data["id"];
+				$("#header2").html("<a href=\"#\" onclick=\"javascript:updateDyn();\">" + data["id"] + "@" + data["host"] + "</a>");
+				mkTable3("#rptable", "Mining Pools", data["server"]);
+				mkTable3("#rbtable", "Backup Pools", data["backup_server"]);
+				var tmo = parseInt(data["refresh"]);
+				var ahtml = "<table><tr><th>Property</th><th>Value</th></tr><tr><td>Automatically page refresh</td><td><form><select name=\"refresh\" onChange=\"javascript:setValue('s_refresh', this.name, this.options[this.selectedIndex].value)\">"
 				var itemsTmo = { 0:"Off", 5:"5sec", 10:"10sec", 15:"15sec", 20:"20sec", 30:"30sec", 60:"1min", 120:"2min", 300:"5min" };
 				for (var idx in itemsTmo) {
 					if (idx == tmo) {
@@ -261,13 +261,13 @@
 						ahtml += "<option value=\"" + idx + "\">" + itemsTmo[idx] + "</option>";
 					}
 				}
-				ahtml += "</select></form></td></tr><tr class=\"tr2\"><td>Target checking</td><td><form><select name=\"targetcheck\" onChange=\"javascript:setFlag(this.name, this.options[this.selectedIndex].value)\">"
+				ahtml += "</select></form></td></tr><tr class=\"tr2\"><td>Target checking</td><td><form><select name=\"targetcheck\" onChange=\"javascript:setValue('s_value', this.name, this.options[this.selectedIndex].value)\">"
 				if (parseInt(data["target_check"]) == 1) {
 					ahtml += "<option value=\"0\">disabled</option><option value=\"1\" selected=\"selected\">enabled</option>";
 				} else {
 					ahtml += "<option value=\"0\" selected=\"selected\">disabled</option><option value=\"1\">enabled</option>";
 				}
-				ahtml += "</select></form></td></tr><tr><td>Remote switching</td><td><form><select name=\"remoteswitch\" onChange=\"javascript:setFlag(this.name, this.options[this.selectedIndex].value)\">"
+				ahtml += "</select></form></td></tr><tr><td>Remote switching</td><td><form><select name=\"remoteswitch\" onChange=\"javascript:setValue('s_value', this.name, this.options[this.selectedIndex].value)\">"
 				if (parseInt(data["remote_switch"]) == 1) {
 					ahtml += "<option value=\"0\">disabled</option><option value=\"1\" selected=\"selected\">enabled</option>";
 				} else {
@@ -275,12 +275,12 @@
 				}
 				ahtml += "</select></form></td></tr></table>";
 				$("#admindyn").html(ahtml);
-				$("#footerdyn").html("Page refresh: " + refresh + "&nbsp;-&nbsp;Page generated: " + data["date"]);
 			});
-		}
+		};
 		$(document).ready(function() {
 			tabsInit();
 			update();
+			updateDyn();
 		});
 	</script>
 </head>

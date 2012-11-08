@@ -33,7 +33,7 @@ input[type="button"]:hover { background-color: #369; color: #fff; }
 }
 .headerbox {
 	text-align: right;
-	height: 90px;
+	height: 92px;
 	background: #fff url("../images/bitcoin.png") top left no-repeat;
 	border: solid #aaa 1px;
 	margin: 0;
@@ -89,20 +89,12 @@ tr.tr3 {
 tr.tr4 {
 	background-color: #f66;
 }
-th.fix6 {
-	width: 60px;
-}
-td.fix6 {
-	text-align: center;
-	width: 60px;
-}
-th.fix10 {
-	width: 100px;
-}
-td.fix10 {
-	text-align: center;
-	width: 100px;
-}
+th.fix4 { width: 40px; }
+td.fix4 { text-align: center; width: 40px; }
+th.fix6 { width: 60px; }
+td.fix6 { text-align: center; width: 60px; }
+th.fix10 { width: 100px; }
+td.fix10 { text-align: center; width: 100px; }
 ul#tabs {
 	text-align: center;
 	margin: 0 0 12px 0;
