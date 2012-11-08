@@ -58,8 +58,8 @@ class BTCMinerHTTPD extends NanoHTTPD {
 		} else if (uri.equalsIgnoreCase("/s_rpc")) {
 			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSelectRPC(parms));
 			return rsp;
-		} else if (uri.equalsIgnoreCase("/s_flag")) {
-			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSetFlag(parms));
+		} else if (uri.equalsIgnoreCase("/s_value")) {
+			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_HTML, serveSetValue(parms));
 			return rsp;
 		} else {
 			rsp = serveFile(uri, header, myRootDir, true);
@@ -106,7 +106,7 @@ class BTCMinerHTTPD extends NanoHTTPD {
 						sb.append(", ");
 					}
 					String state;
-					if (rpc.state) {
+					if (rpc.enabled) {
 						state = "enabled";
 					} else {
 						state = "disabled";
@@ -196,12 +196,12 @@ class BTCMinerHTTPD extends NanoHTTPD {
 				if (newpool >= 0 && newpool < (server - backup)) {
 					for (int i = 0; i < (server - backup); i++) {
 						if (i == newpool) {
-							BTCMiner.rpc[i].state = true;
+							BTCMiner.rpc[i].enabled = true;
 						}
 					}
 					for (int i = 0; i < (server - backup); i++) {
 						if (i != newpool) {
-							BTCMiner.rpc[i].state = false;
+							BTCMiner.rpc[i].enabled = false;
 						}
 					}
 					if (BTCMiner.newBlockMonitor != null) {
@@ -242,9 +242,9 @@ class BTCMinerHTTPD extends NanoHTTPD {
 		return msg;
 	}
 
-	// ******* serveSetFlag
+	// ******* serveSetValue
 	// *************************************************************************
-	private String serveSetFlag(Properties parms) {
+	private String serveSetValue(Properties parms) {
 		if (parms.getProperty("remoteswitch") != null) {
 			int value = Integer.parseInt(parms.getProperty("remoteswitch"));
 			if (value == 0) {
@@ -1061,19 +1061,19 @@ class RPC {
 	public String	host;
 	public String	usr;
 	public String	pwd;
-	public boolean	state;
+	public boolean	enabled = false;
 	public int	sharesGetwork;
 	public int	sharesAccepted;
 	public int	sharesRejected;
 	public double	difficulty;
 
-	public RPC(String name, String url, String host, String usr, String pwd, boolean state) {
+	public RPC(String name, String url, String host, String usr, String pwd, boolean enabled) {
 		this.name = name;
 		this.url = url;
 		this.host = host;
 		this.usr = usr;
 		this.pwd = pwd;
-		this.state = state;
+		this.enabled = enabled;
 
 		sharesGetwork = 0;
 		sharesAccepted = 0;
@@ -1894,7 +1894,7 @@ class BTCMiner implements MsgObj {
 		long t = new Date().getTime();
 
 		int i = 0;
-		while (i < rpcCount && (rpc[i].state == false || (disableTime[i] > t))) {
+		while (i < rpcCount && (rpc[i].enabled == false || (disableTime[i] > t))) {
 			i++;
 		}
 		if (i >= rpcCount) {
@@ -2567,8 +2567,7 @@ class BTCMiner implements MsgObj {
 						if (i >= args.length) {
 							throw new Exception();
 						}
-						boolean state = rpcCount == 2 ? true : false;
-						rpc[rpcCount] = new RPC(/*name*/args[i - 4], /*url*/args[i - 3], /*host*/args[i - 2], /*usr*/args[i - 1], /*pwd*/args[i], state);
+						rpc[rpcCount] = new RPC(/*name*/args[i - 4], /*url*/args[i - 3], /*host*/args[i - 2], /*usr*/args[i - 1], /*pwd*/args[i], rpcCount == 0);
 						rpcCount += 1;
 					} catch (Exception e) {
 						throw new ParameterException("<name> <website> <URL> <user name> <password> expected after -o");
