@@ -2254,7 +2254,7 @@ class BTCMiner implements MsgObj {
 						j++;
 					}
 					if (j >= lastGoldenNonces.length) {
-						if (targetCheck && compareWithTarget(n, false)) {
+						if (!targetCheck || compareWithTarget(n, false)) {
 							submitWork(n);
 							submittedCount += 1;
 							totalSubmittedCount += difficulty;
