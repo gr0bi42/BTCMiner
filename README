@@ -4,6 +4,11 @@ You can find more info at the ZTEX BTCMiner homepage: http://www.ztex.de/btcmine
 
 Changes
 =======
+09 Nov 2012:
+- Fix: with disabled target checking no shares were submitted
+- Chg: website improvements (javascript)
+- Fix: workaround for iOS 6 Ajax bug (sometime still buggy, use chrome instead safari)
+
 02 Nov 2012:
 - Upd: update to BTCMiner Release 121017
 - Chg: target checking tweaks
