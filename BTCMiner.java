@@ -45,6 +45,28 @@ class BTCMinerHTTPD extends NanoHTTPD {
 	// ******* Response
 	// *************************************************************************
 	public Response serve(String uri, String method, Properties header, Properties parms, Properties files) {
+/*
+                System.out.println( method + " '" + uri + "' " );
+                Enumeration e = header.propertyNames();
+                while ( e.hasMoreElements())
+                {
+                        String value = (String)e.nextElement();
+                        System.out.println( "  HDR: '" + value + "' = '" + header.getProperty( value ) + "'" );
+                }
+                e = parms.propertyNames();
+                while ( e.hasMoreElements())
+                {
+                        String value = (String)e.nextElement();
+                        System.out.println( "  PRM: '" + value + "' = '" + parms.getProperty( value ) + "'" );
+                }
+                e = files.propertyNames();
+                while ( e.hasMoreElements())
+                {
+                        String value = (String)e.nextElement();
+                        System.out.println( "  UPLOADED: '" + value + "' = '" + files.getProperty( value ) + "'" );
+                }
+'accept-encoding' = 'gzip,deflate,sdch'
+*/
 		Response rsp;
 		if (uri.equalsIgnoreCase("/json")) {
 			rsp = new NanoHTTPD.Response(HTTP_OK, MIME_JSON, serveJson(uri, header));
@@ -97,9 +119,9 @@ class BTCMinerHTTPD extends NanoHTTPD {
 			if (backup1 > 0) {
 				backup = server - backup1;
 			}
+			sb.append(", \"server_count\":\"" + (server - backup) + "\"");
+			sb.append(", \"server\":[");
 			if (server > 0) {
-				sb.append(", \"server_count\":\"" + (server - backup) + "\"");
-				sb.append(", \"server\":[");
 				for (int i = 0; i < (server - backup); i++) {
 					RPC rpc = BTCMiner.rpc[i];
 					if (i > 0) {
@@ -113,11 +135,12 @@ class BTCMinerHTTPD extends NanoHTTPD {
 					}
 					sb.append("{\"index\":\"" + i + "\", \"state\":\"" + state + "\", \"name\":\"" + rpc.name +"\", \"url\":\"" + rpc.url + "\", \"host\":\"" + rpc.host + "\", \"user\":\"" + rpc.usr +"\", \"pass\":\"" + rpc.pwd + "\", \"getwork\":\"" + rpc.sharesGetwork +  "\", \"accept\":\"" + rpc.sharesAccepted + "\", \"reject\":\"" + rpc.sharesRejected + "\", \"difficulty\":\"" + String.format("%.1f", rpc.difficulty) + "\"}");
 				}
-				sb.append("]");
 			}
+			sb.append("]");
+
+			sb.append(", \"backup_server_count\":\"" + backup + "\"");
+			sb.append(", \"backup_server\":[");
 			if (backup > 0) {
-				sb.append(", \"backup_server_count\":\"" + backup + "\"");
-				sb.append(", \"backup_server\":[");
 				for (int i = backup1; i < server; i++) {
 					RPC rpc = BTCMiner.rpc[i];
 					if (i > backup1) {
@@ -125,8 +148,9 @@ class BTCMinerHTTPD extends NanoHTTPD {
 					}
 					sb.append("{\"index\":\"" + i + "\", \"state\":\"enabled\", \"name\":\"" + rpc.name +"\", \"url\":\"" + rpc.url + "\", \"host\":\"" + rpc.host + "\", \"user\":\"" + rpc.usr +"\", \"pass\":\"" + rpc.pwd + "\", \"getwork\":\"" + rpc.sharesGetwork +  "\", \"accept\":\"" + rpc.sharesAccepted + "\", \"reject\":\"" + rpc.sharesRejected + "\", \"difficulty\":\"" + String.format("%.1f", rpc.difficulty) + "\"}");
 				}
-				sb.append("]");
 			}
+			sb.append("]");
+
 			double hashrate_total = 0.0;
 			double hashrate_submitted = 0.0;
 			sb.append(", \"miner\":[");
@@ -1898,6 +1922,7 @@ class BTCMiner implements MsgObj {
 			i++;
 		}
 		if (i >= rpcCount) {
+			msg("Warning: unable to obtain new work! Specifying a backup pool may help.");
 			return false;
 		}
 		rpcNum = i;
@@ -2766,6 +2791,10 @@ class BTCMiner implements MsgObj {
 
 			if (overheatThreshold > 0.1001) {
 				System.err.println("Warning: overheat threshold set to " + overheatThreshold + ": overheat shutdown may be triggered too late, recommended values: 0..0.1");
+			}
+
+			if (rpcFirstBackup == 0) {
+				System.err.println("Warning: no backup mining pools specified!");
 			}
 
 			if (BTCMinerCluster.maxDevicesPerThread < 1) {
