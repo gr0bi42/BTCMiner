@@ -382,7 +382,7 @@ void main(void)
 #endif
 
 	watchdog_cnt += 1;
-	if ( watchdog_cnt > WATCHDOG_TIMEOUT ) {
+	if ( watchdog_cnt == WATCHDOG_TIMEOUT ) {
 #ifeq[TARGET_BOARD][1.15]
 	    stopped[0] = 1;
 	    PLL_STOP = 1;
