@@ -1,6 +1,6 @@
 /*!
    default -- Default Firmware for ZTEX USB-FPGA Modules 1.15x
-   Copyright (C) 2009-2011 ZTEX GmbH.
+   Copyright (C) 2009-2012 ZTEX GmbH.
    http://www.ztex.de
 
    This program is free software; you can redistribute it and/or modify

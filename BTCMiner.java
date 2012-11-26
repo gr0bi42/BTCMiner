@@ -1,6 +1,6 @@
 /*!
    BTCMiner -- BTCMiner for ZTEX USB-FPGA Modules
-   Copyright (C) 2011 ZTEX GmbH
+   Copyright (C) 2011-2012 ZTEX GmbH
    http://www.ztex.de
 
    This program is free software; you can redistribute it and/or modify

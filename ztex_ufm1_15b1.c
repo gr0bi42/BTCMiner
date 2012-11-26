@@ -1,6 +1,6 @@
 /*!
    btcminer -- BTCMiner for ZTEX USB-FPGA Modules: EZ-USB FX2 firmware for ZTEX USB FPGA Module 1.15b (one single hash pipe)
-   Copyright (C) 2011 ZTEX GmbH
+   Copyright (C) 2011-2012 ZTEX GmbH
    http://www.ztex.de
 
    This program is free software; you can redistribute it and/or modify
