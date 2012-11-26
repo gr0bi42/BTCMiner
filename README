@@ -4,6 +4,17 @@ You can find more info at the ZTEX BTCMiner homepage: http://www.ztex.de/btcmine
 
 Changes
 =======
+
+26 Nov 2012:
+- Upd: update to BTCMiner Release 121126
+
+16 Nov 2012:
+- Upd: update to BTCMiner Release 121116
+
+11 Nov 2012:
+- Fix: json data output without backup server
+- Chg: print log message if getwork fails
+
 09 Nov 2012:
 - Fix: with disabled target checking no shares were submitted
 - Chg: website improvements (javascript)
