@@ -629,6 +629,27 @@ class BTCMinerThread extends Thread {
 			pollLoop.printInfo(busName);
 		}
 	}
+
+	// ******* disconnect
+	// *************************************************************************
+	public int disconnect(String ss, Vector<BTCMiner> allMiners) {
+		int i = 0;
+		synchronized (miners) {
+			for (int j = miners.size() - 1; j >= 0; j--) {
+				BTCMiner m = miners.elementAt(j);
+				if (ss.equals(m.ztex().dev().snString())) {
+					BTCMiner.printMsg("Disconnecting " + m.name);
+					if (allMiners != null) {
+						allMiners.removeElement(m);
+					}
+					m.suspend();
+					miners.removeElementAt(j);
+					i += 1;
+				}
+			}
+		}
+		return i;
+	}
 }
 
 // *****************************************************************************
@@ -789,13 +810,33 @@ class BTCMinerCluster {
 					BTCMiner.printMsg2("Reset all performance end error counters.");
 				} else if (cmd.equalsIgnoreCase("i") || cmd.equalsIgnoreCase("info")) {
 					nextInfoTime = 0;
+				} else if ( cmd.charAt(0) == 'd' || cmd.charAt(0) == 'D' ) {
+					int i = (cmd.length() >= 10 && cmd.substring(0, 10).equalsIgnoreCase("disconnect")) ? 10 : 1;
+					while (i < cmd.length() && cmd.charAt(i) <= ' ') {
+						i++;
+					}
+					int j = cmd.length() - 1;
+					while (j >= i && cmd.charAt(j) <= ' ') {
+						j--;
+					}
+					if (i <= j) {
+						String ss = BTCMiner.checkSnString(cmd.substring(i, j + 1));
+						j = 0;
+						for (i = threads.size() - 1; i >= 0; i--)  {
+							j += threads.elementAt(i).disconnect(ss, allMiners);
+						}
+						System.out.println("Disconnected " + j + " miners");
+					} else {
+						System.out.println("No serial number specified");
+					}
 				} else if (cmd.equalsIgnoreCase("h") || cmd.equalsIgnoreCase("help")) {
-					System.out.println("q(uit)           Exit BTCMiner");
-					System.out.println("h(elp)	         Print this help");
-					System.out.println("r(escan)         Rescan bus");
-					System.out.println("c(ounter_reset)  Reset performance and error counters");
-					System.out.println("s(uspend)        Suspend cluster");
-					System.out.println("i(nfo)           Print cluster informations");
+					System.out.println("q(uit)                         Exit BTCMiner");
+					System.out.println("r(escan)                       Rescan bus");
+					System.out.println("c(ounter_reset)                Reset performance and error counters");
+					System.out.println("s(uspend)                      Suspend cluster");
+					System.out.println("d(isconnect) <serial nunmber>  Disconnect device");
+					System.out.println("i(nfo)                         Print cluster informations");
+					System.out.println("h(elp)                         Print this help");
 				} else {
 					System.out.println("Invalid command: `" + cmd + "', enter `h' for help");
 				}
