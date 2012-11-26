@@ -1324,6 +1324,17 @@ class BTCMiner implements MsgObj {
 		}
 	}
 
+	// ******* hexStrToData2
+	// *************************************************************************
+	public static void hexStrToData2(String str, byte[] buf) throws NumberFormatException {
+		if (str.length() < buf.length * 2) {
+			throw new NumberFormatException("Invalid length of string");
+		}
+		for (int i = 0; i < buf.length; i++) {
+			buf[i] = (byte) (Integer.parseInt(str.substring(i * 2, i * 2 + 1), 16) + Integer.parseInt(str.substring(i * 2 + 1, i * 2 + 2), 16) * 16);
+		}
+	}
+
 	// ******* dataToHexStr
 	// *************************************************************************
 	public static String dataToHexStr(byte[] data) {
@@ -1894,7 +1905,7 @@ class BTCMiner implements MsgObj {
 
 		// read response header
 		String str = con.getHeaderField("X-Reject-Reason");
-		if (str != null && !str.equals("")) {
+		if (str != null && !str.equals("") && !str.equals("high-hash") && !str.equals("stale-prevblk") && !str.equals("duplicate")) {
 			msgObj.rejectReason(str);
 		}
 
@@ -2107,7 +2118,7 @@ class BTCMiner implements MsgObj {
 		return dataToInt(hashBuf, 28);
 	}
 
-	// ******* compareWithTarget - returns true if smaller than target
+	// ******* compareWithTarget - returns true if smaller than or equal to target
 	// *************************************************************************
 	public boolean compareWithTarget(int n, boolean dolog) throws NumberFormatException {
 		/* already done in gethash
@@ -2115,8 +2126,9 @@ class BTCMiner implements MsgObj {
 		sha256_transform(midstateBuf, 0, dataBuf, 64, hashBuf, 0);
 		sha256_transform(sha256_init_state, 0, hashBuf, 0, hashBuf, 0);
 		*/
-		for (int i=31; i>=0; i--) {
-			if ((hashBuf[i] & 255) < (targetBuf[i] & 255)) {
+		for (int i = 0; i < 32; i++) {
+			int j = i + 3 - 2 * (i % 4);
+			if ((hashBuf[31 - j] & 255) < (targetBuf[31 - i] & 255)) {
 				if (dolog) {
 					dmsg("n=" + intToHexStr(n) + " d=" + dataToHexStr(dataBuf));
 					dmsg("n=" + intToHexStr(n) + " t=" + dataToHexStr(targetBuf));
@@ -2124,7 +2136,7 @@ class BTCMiner implements MsgObj {
 				}
 				return true;
 			}
-			if ((hashBuf[i] & 255) > (targetBuf[i] & 255)) {
+			if ((hashBuf[31 - j] & 255) > (targetBuf[31 - i] & 255)) {
 				if (dolog) {
 					dmsg("n=" + intToHexStr(n) + " t=" + dataToHexStr(targetBuf));
 					dmsg("n=" + intToHexStr(n) + " h=" + dataToHexStr(hashBuf).substring(0, 64) + " -> MISSED");
@@ -2305,7 +2317,7 @@ class BTCMiner implements MsgObj {
 			if (errorRate[freqM] > maxErrorRate[freqM]) {
 				maxErrorRate[freqM] = errorRate[freqM];
 			}
-			if (errorWeight[freqM] > 100) {
+			if (errorWeight[freqM] > 120) {
 				maxHashRate = Math.max(maxHashRate, (freqM + 1.0) * (1 - errorRate[freqM]));
 			}
 		}
