@@ -93,6 +93,7 @@
 			newform += "<input type=\"text\" name=\"rpchost\" value=\"" + form.rpchost.value + "\" />";
 			newform += "<input type=\"text\" name=\"rpcusr\" value=\"" + form.rpcusr.value + "\" />";
 			newform += "<input type=\"text\" name=\"rpcpwd\" value=\"" + form.rpcpwd.value + "\" />";
+			newform += "<input type=\"text\" name=\"tmo\" value=\"" + form.tmo.value + "\" />";
 			newform += "</form>";
 			$.post("/s_rpc", $(newform).serialize());
 			update();
@@ -128,18 +129,23 @@
 					pr = (100.0 * sr) / sa;
 				}
 
-				var enabled = servers[i]["state"] == "enabled";
-				if (colorize && enabled) {
-					html += "<tr class=\"tr3\">";
+				var disabled = servers[i]["state"] == "disabled";
+				var mining = servers[i]["mining"] == "enabled";
+				if (disabled) {
+						html += "<tr class=\"tr5\">";
 				} else {
-					if ((i % 2) == 0) {
-						html += "<tr>";
+					if (colorize && mining) {
+						html += "<tr class=\"tr3\">";
 					} else {
-						html += "<tr class=\"tr2\">";
+						if ((i % 2) == 0) {
+							html += "<tr>";
+						} else {
+							html += "<tr class=\"tr2\">";
+						}
 					}
 				}
 				var poolid = parseInt(servers[i]["index"]);
-				if (!enabled) {
+				if (!mining) {
 					html += "<td class=\"fix4\"><a href=\"#\" onClick=\"javascript:switchPool(" + poolid + ");\">" + poolid + "</a></td>";
 				} else {
 					html += "<td class=\"fix4\">" + poolid + "</td>";
@@ -208,6 +214,7 @@
 			html += "<th>URL</th>";
 			html += "<th>Username</th>";
 			html += "<th>Password</th>";
+			html += "<th>Disable Time</th>";
 			html += "<th class=\"fix10\">Action</th></tr>";
 			for (var i=0; i<servers.length; i++) {
 				var poolid = parseInt(servers[i]["index"]);
@@ -223,6 +230,7 @@
 				html += "<td align=\"center\"><input type=\"text\" name=\"rpchost\" value=\"" + servers[i]["host"] + "\" /></td>";
 				html += "<td align=\"center\"><input type=\"text\" name=\"rpcusr\" value=\"" + servers[i]["user"] + "\" /></td>";
 				html += "<td align=\"center\"><input type=\"text\" name=\"rpcpwd\" value=\"" + servers[i]["pass"] + "\" /></td>";
+				html += "<td align=\"center\"><input type=\"text\" name=\"tmo\" value=\"" + servers[i]["tmo"] + "\" /></td>";
 				html += "<td class=\"fix10\"><input type=\"button\" value=\"Save\" onClick=\"javascript:submitRPC(this.form)\"/></td>";
 				html += "</tr></form>";
 			}

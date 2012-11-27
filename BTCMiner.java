@@ -128,12 +128,18 @@ class BTCMinerHTTPD extends NanoHTTPD {
 						sb.append(", ");
 					}
 					String state;
-					if (rpc.enabled) {
-						state = "enabled";
-					} else {
+					if (rpc.disabled()) {
 						state = "disabled";
+					} else {
+						state = "enabled";
 					}
-					sb.append("{\"index\":\"" + i + "\", \"state\":\"" + state + "\", \"name\":\"" + rpc.name +"\", \"url\":\"" + rpc.url + "\", \"host\":\"" + rpc.host + "\", \"user\":\"" + rpc.usr +"\", \"pass\":\"" + rpc.pwd + "\", \"getwork\":\"" + rpc.sharesGetwork +  "\", \"accept\":\"" + rpc.sharesAccepted + "\", \"reject\":\"" + rpc.sharesRejected + "\", \"difficulty\":\"" + String.format("%.1f", rpc.difficulty) + "\"}");
+					String mining;
+					if (rpc.mine) {
+						mining = "enabled";
+					} else {
+						mining = "disabled";
+					}
+					sb.append("{\"index\":\"" + i + "\", \"state\":\"" + state + "\", \"mining\":\"" + mining +"\", \"name\":\"" + rpc.name +"\", \"url\":\"" + rpc.url + "\", \"host\":\"" + rpc.host + "\", \"user\":\"" + rpc.usr + "\", \"pass\":\"" + rpc.pwd + "\", \"tmo\":\"" + rpc.ioDisableTime + "\", \"getwork\":\"" + rpc.sharesGetwork +  "\", \"accept\":\"" + rpc.sharesAccepted + "\", \"reject\":\"" + rpc.sharesRejected + "\", \"difficulty\":\"" + String.format("%.1f", rpc.difficulty) + "\"}");
 				}
 			}
 			sb.append("]");
@@ -146,7 +152,13 @@ class BTCMinerHTTPD extends NanoHTTPD {
 					if (i > backup1) {
 						sb.append(", ");
 					}
-					sb.append("{\"index\":\"" + i + "\", \"state\":\"enabled\", \"name\":\"" + rpc.name +"\", \"url\":\"" + rpc.url + "\", \"host\":\"" + rpc.host + "\", \"user\":\"" + rpc.usr +"\", \"pass\":\"" + rpc.pwd + "\", \"getwork\":\"" + rpc.sharesGetwork +  "\", \"accept\":\"" + rpc.sharesAccepted + "\", \"reject\":\"" + rpc.sharesRejected + "\", \"difficulty\":\"" + String.format("%.1f", rpc.difficulty) + "\"}");
+					String state;
+					if (rpc.disabled()) {
+						state = "disabled";
+					} else {
+						state = "enabled";
+					}
+					sb.append("{\"index\":\"" + i + "\", \"state\":\"" + state + "\", \"mining\":\"enabled\", \"name\":\"" + rpc.name +"\", \"url\":\"" + rpc.url + "\", \"host\":\"" + rpc.host + "\", \"user\":\"" + rpc.usr + "\", \"pass\":\"" + rpc.pwd + "\", \"tmo\":\"" + rpc.ioDisableTime + "\", \"getwork\":\"" + rpc.sharesGetwork +  "\", \"accept\":\"" + rpc.sharesAccepted + "\", \"reject\":\"" + rpc.sharesRejected + "\", \"difficulty\":\"" + String.format("%.1f", rpc.difficulty) + "\"}");
 				}
 			}
 			sb.append("]");
@@ -220,12 +232,12 @@ class BTCMinerHTTPD extends NanoHTTPD {
 				if (newpool >= 0 && newpool < (server - backup)) {
 					for (int i = 0; i < (server - backup); i++) {
 						if (i == newpool) {
-							BTCMiner.rpc[i].enabled = true;
+							BTCMiner.rpc[i].mine = true;
 						}
 					}
 					for (int i = 0; i < (server - backup); i++) {
 						if (i != newpool) {
-							BTCMiner.rpc[i].enabled = false;
+							BTCMiner.rpc[i].mine = false;
 						}
 					}
 					if (BTCMiner.newBlockMonitor != null) {
@@ -296,7 +308,7 @@ class BTCMinerHTTPD extends NanoHTTPD {
 	// ******* serveSelectRPC
 	// *************************************************************************
 	private String serveSelectRPC(Properties parms) {
-		if (parms.getProperty("pool") != null && parms.getProperty("rpcname") != null && parms.getProperty("rpcurl") != null && parms.getProperty("rpchost") != null && parms.getProperty("rpcusr") != null && parms.getProperty("rpcpwd") != null) {
+		if (parms.getProperty("pool") != null && parms.getProperty("rpcname") != null && parms.getProperty("rpcurl") != null && parms.getProperty("rpchost") != null && parms.getProperty("rpcusr") != null && parms.getProperty("rpcpwd") != null && parms.getProperty("tmo") != null) {
 			int pool = Integer.parseInt(parms.getProperty("pool"));
 			int server = BTCMiner.rpcCount;
 			if (pool >= 0 && pool < server) {
@@ -306,6 +318,7 @@ class BTCMinerHTTPD extends NanoHTTPD {
 				rpc.host = parms.getProperty("rpchost");
 				rpc.usr = parms.getProperty("rpcusr");
 				rpc.pwd = parms.getProperty("rpcpwd");
+				rpc.ioDisableTime = Integer.parseInt(parms.getProperty("tmo"));
 				if (BTCMiner.newBlockMonitor != null) {
 					synchronized (BTCMiner.newBlockMonitor) {
 						BTCMiner.disableLPTime = new Date().getTime() + 20000;
@@ -333,10 +346,10 @@ class BTCMinerHTTPD extends NanoHTTPD {
 class ParameterException extends Exception {
 	public final static String helpMsg = new String(
 		"Parameters:\n" +
-		"    -o <name> <web> <url> <user name> <password> \n" +
-		"                      Name, website, URL, user name and password of a server. Can be specified multiple times\n" +
-		"    -b <name> <web> <url> <user name> <password> \n" +
-		"                      Name, website, URL, user name and password of a backup server. Can be specified multiple times\n" +
+		"    -o <name> <web> <url> <user name> <password> <disable timeout>\n" +
+		"                      Name, website, URL, user name, password and disable timeout of a server. Can be specified multiple times\n" +
+		"    -b <name> <web> <url> <user name> <password> <disable timeout>\n" +
+		"                      Name, website, URL, user name, password and disable timeout of a backup server. Can be specified multiple times\n" +
 		"    -lp <url> <user name> <password> \n" +
 		"                      URL, user name and password of a long polling server (determined automatically by default)\n" +
 		"    -l <log file>     Log file (default: BTCMiner.log)\n" +
@@ -1019,7 +1032,6 @@ class PollLoop {
 	// *************************************************************************
 	public void run() {
 		int maxIoErrorCount = (int) Math.round((BTCMiner.rpcCount > 1 ? 2 : 4) * BTCMiner.connectionEffort);
-		int ioDisableTime = BTCMiner.rpcCount > 1 ? 180 : 30;
 
 		while (v.size() > 0) {
 			long t0 = new Date().getTime();
@@ -1045,22 +1057,22 @@ class PollLoop {
 							RPC rpc = BTCMiner.rpc[m.rpcNum];
 							m.ioErrorCount[m.rpcNum]++;
 							if (m.ioErrorCount[m.rpcNum] >= maxIoErrorCount) {
-								m.msg("Error: " + e.getLocalizedMessage() + ": Disabling URL " + rpc.host + " for " + ioDisableTime + "s");
-								m.disableTime[m.rpcNum] = new Date().getTime() + ioDisableTime * 1000;
+								m.msg("Error: " + e.getLocalizedMessage());
+								rpc.disable();
 								m.ioErrorCount[m.rpcNum] = 0;
 							}
 						} catch (ParserException e) {
 							RPC rpc = BTCMiner.rpc[m.rpcNum];
-							m.msg("Error: " + e.getLocalizedMessage() + ": Disabling URL " + rpc.host + " for " + ioDisableTime + "s");
-							m.disableTime[m.rpcNum] = new Date().getTime() + ioDisableTime * 1000;
+							m.msg("Error: " + e.getLocalizedMessage());
+							rpc.disable();
 						} catch (NumberFormatException e) {
 							RPC rpc = BTCMiner.rpc[m.rpcNum];
-							m.msg("Error: " + e.getLocalizedMessage() + ": Disabling URL " + rpc.host + " for " + ioDisableTime + "s");
-							m.disableTime[m.rpcNum] = new Date().getTime() + ioDisableTime * 1000;
+							m.msg("Error: " + e.getLocalizedMessage());
+							rpc.disable();
 						} catch (IndexOutOfBoundsException e) {
 							RPC rpc = BTCMiner.rpc[m.rpcNum];
-							m.msg("Error: " + e.getLocalizedMessage() + ": Disabling URL " + rpc.host + " for " + ioDisableTime + "s");
-							m.disableTime[m.rpcNum] = new Date().getTime() + ioDisableTime * 1000;
+							m.msg("Error: " + e.getLocalizedMessage());
+							rpc.disable();
 						} catch (Exception e) {
 							m.msg("Error: " + e.getLocalizedMessage() + ": Disabling device");
 							m.fatalError = "Error: " + e.getLocalizedMessage() + ": Device disabled since " + BTCMiner.dateFormat.format(new Date());
@@ -1126,24 +1138,47 @@ class RPC {
 	public String	host;
 	public String	usr;
 	public String	pwd;
-	public boolean	enabled = false;
+	public boolean	mine = false;
 	public int	sharesGetwork;
 	public int	sharesAccepted;
 	public int	sharesRejected;
 	public double	difficulty;
+	public int	ioDisableTime;
+	int		ioDisableTimeEffort;
+	public long	disableTime;
 
-	public RPC(String name, String url, String host, String usr, String pwd, boolean enabled) {
+	public RPC(String name, String url, String host, String usr, String pwd, int tmo, boolean mine) {
 		this.name = name;
 		this.url = url;
 		this.host = host;
 		this.usr = usr;
 		this.pwd = pwd;
-		this.enabled = enabled;
+		this.ioDisableTime = tmo;
+		this.mine = mine;
 
 		sharesGetwork = 0;
 		sharesAccepted = 0;
 		sharesRejected = 0;
 		difficulty = 1.0;
+		disableTime = 0;
+		ioDisableTimeEffort = 1;
+	}
+
+	synchronized public void disable() {
+		long t = new Date().getTime();
+
+		if (t < (disableTime + ioDisableTime * 1000)) {
+			ioDisableTimeEffort += 1;
+		} else {
+			ioDisableTimeEffort = 1;
+		}
+
+		BTCMiner.printMsg("Disabling URL " + host + " for " + (ioDisableTimeEffort * ioDisableTime) + "s");
+		disableTime = t + ioDisableTimeEffort * ioDisableTime * 1000;
+	}
+
+	public boolean disabled() {
+		return disableTime > new Date().getTime();
 	}
 }
 
@@ -1574,7 +1609,6 @@ class BTCMiner implements MsgObj {
 	public int id;
 
 	public int ioErrorCount[] = new int[maxRpcCount];
-	public long disableTime[] = new long[maxRpcCount];
 	private String lastRejectReason = "";
 
 	public int rpcNum = 0;
@@ -1741,7 +1775,6 @@ class BTCMiner implements MsgObj {
 		startTimeAdjust = startTime;
 
 		for (int i = 0; i < rpcCount; i++) {
-			disableTime[i] = 0;
 			ioErrorCount[i] = 0;
 		}
 
@@ -1798,7 +1831,6 @@ class BTCMiner implements MsgObj {
 		startTimeAdjust = startTime;
 
 		for (int i = 0; i < rpcCount; i++) {
-			disableTime[i] = 0;
 			ioErrorCount[i] = 0;
 		}
 	}
@@ -1905,7 +1937,8 @@ class BTCMiner implements MsgObj {
 
 		// read response header
 		String str = con.getHeaderField("X-Reject-Reason");
-		if (str != null && !str.equals("") && !str.equals("high-hash") && !str.equals("stale-prevblk") && !str.equals("duplicate")) {
+		//if (str != null && !str.equals("") && !str.equals("high-hash") && !str.equals("stale-prevblk") && !str.equals("duplicate")) {
+		if (str != null && !str.equals("")) {
 			msgObj.rejectReason(str);
 		}
 
@@ -1970,7 +2003,7 @@ class BTCMiner implements MsgObj {
 		long t = new Date().getTime();
 
 		int i = 0;
-		while (i < rpcCount && (rpc[i].enabled == false || (disableTime[i] > t))) {
+		while (i < rpcCount && (rpc[i].mine == false || rpc[i].disabled())) {
 			i++;
 		}
 		if (i >= rpcCount) {
@@ -2020,8 +2053,10 @@ class BTCMiner implements MsgObj {
 				} else {
 					difficulty =  1.0;
 				}
-				rpc.difficulty = difficulty;
 				dmsg("getWork new difficulty: " + difficulty);
+			}
+			if (rpc.difficulty != difficulty) {
+				rpc.difficulty = difficulty;
 			}
 		}
 
@@ -2296,12 +2331,12 @@ class BTCMiner implements MsgObj {
 	// ******* getNonces
 	// *************************************************************************
 	public boolean getNonces() throws UsbException, MalformedURLException, IOException {
-		if (!isRunning || disableTime[prevRpcNum] > new Date().getTime()) {
+		if (!isRunning || rpc[prevRpcNum].disabled()) {
 			return false;
 		}
 		rpcNum = prevRpcNum;
 
-		//dmsg("getNonces: ENTER");
+		//xxxdmsg("getNonces: ENTER");
 		getNoncesInt();
 
 		if (ignoreErrorTime < new Date().getTime()) {
@@ -2342,7 +2377,7 @@ class BTCMiner implements MsgObj {
 				}
 			}
 		}
-		//dmsg("getNonces: LEAVE");
+		//xxxdmsg("getNonces: LEAVE");
 		return submitted;
 	}
 
@@ -2509,7 +2544,7 @@ class BTCMiner implements MsgObj {
 		if (newCount < newBlockMonitor.newCount) {
 			return true;
 		}
-		if (disableTime[prevRpcNum] > t) {
+		if (rpc[prevRpcNum].disabled()) {
 			return true;
 		}
 		if (lastGetWorkTime + maxPollInterval < t) {
@@ -2640,15 +2675,15 @@ class BTCMiner implements MsgObj {
 					if (rpcFirstBackup > 0) {
 						throw new ParameterException("Don't mix options -o and -b");
 					}
-					i += 5;
+					i += 6;
 					try {
 						if (i >= args.length) {
 							throw new Exception();
 						}
-						rpc[rpcCount] = new RPC(/*name*/args[i - 4], /*url*/args[i - 3], /*host*/args[i - 2], /*usr*/args[i - 1], /*pwd*/args[i], rpcCount == 0);
+						rpc[rpcCount] = new RPC(/*name*/args[i - 5], /*url*/args[i - 4], /*host*/args[i - 3], /*usr*/args[i - 2], /*pwd*/args[i - 1], /*tmo*/Integer.parseInt(args[i]), rpcCount == 0);
 						rpcCount += 1;
 					} catch (Exception e) {
-						throw new ParameterException("<name> <website> <URL> <user name> <password> expected after -o");
+						throw new ParameterException("<name> <website> <URL> <user name> <password> <disable timeout> expected after -o");
 					}
 				} else if (args[i].equals("-b")) {
 					if (rpcCount >= maxRpcCount) {
@@ -2657,18 +2692,18 @@ class BTCMiner implements MsgObj {
 					if (rpcCount == 0) {
 						throw new ParameterException("Please specify at least one -o before -b");
 					}
-					i += 5;
+					i += 6;
 					try {
 						if (i >= args.length) {
 							throw new Exception();
 						}
-						rpc[rpcCount] = new RPC(/*name*/args[i - 4], /*url*/args[i - 3], /*host*/args[i - 2], /*usr*/args[i - 1], /*pwd*/args[i], true);
+						rpc[rpcCount] = new RPC(/*name*/args[i - 5], /*url*/args[i - 4], /*host*/args[i - 3], /*usr*/args[i - 2], /*pwd*/args[i - 1], /*tmo*/Integer.parseInt(args[i]), true);
 						if (rpcFirstBackup == 0) {
 							rpcFirstBackup = rpcCount;
 						}
 						rpcCount += 1;
 					} catch (Exception e) {
-						throw new ParameterException("<name> <website> <URL> <user name> <password> expected after -b");
+						throw new ParameterException("<name> <website> <URL> <user name> <password> <disable timeout> expected after -b");
 					}
 				} else if (args[i].equals("-lp")) {
 					i += 3;

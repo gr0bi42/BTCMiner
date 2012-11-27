@@ -89,6 +89,9 @@ tr.tr3 {
 tr.tr4 {
 	background-color: #f66;
 }
+tr.tr5 {
+	background-color: #ffe4e4;
+}
 th.fix4 { width: 40px; }
 td.fix4 { text-align: center; width: 40px; }
 th.fix6 { width: 60px; }
