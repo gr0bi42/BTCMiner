@@ -4,6 +4,10 @@ You can find more info at the ZTEX BTCMiner homepage: http://www.ztex.de/btcmine
 
 Changes
 =======
+27 Nov 2012:
+- Chg: make mining pool disable time configurable
+- Chg: modify pool disable time via webinterface
+- Chg: moved handling of dead/lagging pools into RPC object to improve overall hashrate in case of pool problems
 
 26 Nov 2012:
 - Upd: update to BTCMiner Release 121126
