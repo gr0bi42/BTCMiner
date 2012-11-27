@@ -118,6 +118,7 @@
 				html += "<th class=\"fix10\">Getwork</th>";
 				html += "<th class=\"fix10\">Accepted</th>";
 				html += "<th class=\"fix10\">Rejected</th>";
+				html += "<th class=\"fix10\">Disabled</th>";
 				html += "<th class=\"fix6\">Difficulty</th>";
 			html += "</tr>";
 			for (var i=0; i<servers.length; i++) {
@@ -154,6 +155,7 @@
 				html += "<td class=\"fix10\">" + servers[i]["getwork"] + "</td>";
 				html += "<td class=\"fix10\">" + sa + "</td>";
 				html += "<td class=\"fix10\">" + sr + " / " + pr.toFixed(2) + "%</td>";
+				html += "<td class=\"fix10\">" + servers[i]["disable"] + "</td>";
 				html += "<td class=\"fix6\">" + servers[i]["difficulty"] + "</td>";
 				html += "</tr>";
 			}
@@ -281,6 +283,10 @@
 				} else {
 					ahtml += "<option value=\"0\" selected=\"selected\">disabled</option><option value=\"1\">enabled</option>";
 				}
+				ahtml += "</select></form></td></tr><tr class=\"tr2\"><td>Reset pool blocking</td><td><form><select name=\"resetdisabletime\" onChange=\"javascript:setValue('s_value', this.name, this.options[this.selectedIndex].value)\">"
+
+				ahtml += "<option value=\"-1\" selected=\"selected\">---</option><option value=\"4242\">all</option>";
+
 				ahtml += "</select></form></td></tr></table>";
 				$("#admindyn").html(ahtml);
 			});
