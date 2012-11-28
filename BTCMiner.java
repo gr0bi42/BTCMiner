@@ -317,10 +317,10 @@ class BTCMinerHTTPD extends NanoHTTPD {
 	// ******* serveSelectRPC
 	// *************************************************************************
 	private String serveSelectRPC(Properties parms) {
-		if (parms.getProperty("pool") != null && parms.getProperty("rpcname") != null && parms.getProperty("rpcurl") != null && parms.getProperty("rpchost") != null && parms.getProperty("rpcusr") != null && parms.getProperty("rpcpwd") != null && parms.getProperty("tmo") != null) {
+		if (parms.getProperty("pool") != null && parms.getProperty("rpcname") != null && parms.getProperty("rpcurl") != null && parms.getProperty("rpchost") != null && parms.getProperty("rpcusr") != null && parms.getProperty("rpcpwd") != null && parms.getProperty("iomon") != null) {
 			try {
 				int pool = Integer.parseInt(parms.getProperty("pool"));
-				int tmo = Integer.parseInt(parms.getProperty("tmo"));
+				int iomon = Integer.parseInt(parms.getProperty("iomon"));
 				int server = BTCMiner.rpcCount;
 				if (pool >= 0 && pool < server) {
 					RPC rpc = BTCMiner.rpc[pool];
@@ -329,7 +329,7 @@ class BTCMinerHTTPD extends NanoHTTPD {
 					rpc.host = parms.getProperty("rpchost");
 					rpc.usr = parms.getProperty("rpcusr");
 					rpc.pwd = parms.getProperty("rpcpwd");
-					rpc.ioDisableMonitorTime = tmo;
+					rpc.ioDisableMonitorTime = iomon;
 					if (BTCMiner.newBlockMonitor != null) {
 						synchronized (BTCMiner.newBlockMonitor) {
 							BTCMiner.disableLPTime = new Date().getTime() + 20000;
