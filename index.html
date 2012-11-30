@@ -255,6 +255,14 @@
 				$("#footerdyn").html("Page refresh: " + refresh + "&nbsp;-&nbsp;Page generated: " + data["date"]);
 			});
 		}
+		function getPoolNamesAsOptionlist(servers) {
+			var html = "";
+			for (var i=0; i<servers.length; i++) {
+				var poolid = parseInt(servers[i]["index"]);
+				html += "<option value=\"" + poolid + "\">" + servers[i]["name"] + "</option>";
+			}
+			return html;
+		};
 		function update() {
 			$.getJSON('/json', function(data) {
 				document.title = data["id"];
@@ -284,8 +292,18 @@
 					ahtml += "<option value=\"0\" selected=\"selected\">disabled</option><option value=\"1\">enabled</option>";
 				}
 				ahtml += "</select></form></td></tr><tr class=\"tr2\"><td>Reset pool blocking</td><td><form><select name=\"resetdisable\" onChange=\"javascript:setValue('s_value', this.name, this.options[this.selectedIndex].value)\">"
+				ahtml += "<option value=\"-1\" selected=\"selected\">--- Do nothing ---</option><option value=\"4242\">Reset All</option>";
+				ahtml += "<option value=\"-1\">--- Mining Pools ---</option>";
+				ahtml += getPoolNamesAsOptionlist(data["server"]);
+				ahtml += "<option value=\"-1\">--- Backup Pools ---</option>";
+				ahtml += getPoolNamesAsOptionlist(data["backup_server"]);
 
-				ahtml += "<option value=\"-1\" selected=\"selected\">---</option><option value=\"4242\">all</option>";
+				ahtml += "</select></form></td></tr><tr><td>Reset statistics</td><td><form><select name=\"resetstat\" onChange=\"javascript:setValue('s_value', this.name, this.options[this.selectedIndex].value)\">"
+				ahtml += "<option value=\"-1\" selected=\"selected\">--- Do nothing ---</option><option value=\"4242\">Reset All</option>";
+				ahtml += "<option value=\"-1\">--- Mining Pools ---</option>";
+				ahtml += getPoolNamesAsOptionlist(data["server"]);
+				ahtml += "<option value=\"-1\">--- Backup Pools ---</option>";
+				ahtml += getPoolNamesAsOptionlist(data["backup_server"]);
 
 				ahtml += "</select></form></td></tr></table>";
 				$("#admindyn").html(ahtml);

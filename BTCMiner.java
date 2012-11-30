@@ -310,6 +310,21 @@ class BTCMinerHTTPD extends NanoHTTPD {
 				}
 			} catch (NumberFormatException e) {
 			}
+		} else if (parms.getProperty("resetstat") != null) {
+			try {
+				int value = Integer.parseInt(parms.getProperty("resetstat"));
+				int server = BTCMiner.rpcCount;
+				if (value == 4242) {	/* all */
+					for (int i = 0; i < server; i++) {
+						RPC rpc = BTCMiner.rpc[i];
+						rpc.resetStats();
+					}
+				} else if (value >= 0 && value < server) {
+					RPC rpc = BTCMiner.rpc[value];
+					rpc.resetStats();
+				}
+			} catch (NumberFormatException e) {
+			}
 		}
 		return "<html><body></body></html>";
 	}
@@ -1199,6 +1214,13 @@ class RPC {
 
 	public synchronized boolean disabled() {
 		return disableTime > new Date().getTime();
+	}
+
+	public void resetStats() {
+		sharesGetwork = 0;
+		sharesAccepted = 0;
+		sharesRejected = 0;
+		poolDisabled = 0;
 	}
 }
 
@@ -2346,7 +2368,6 @@ class BTCMiner implements MsgObj {
 		}
 		rpcNum = prevRpcNum;
 
-		//xxxdmsg("getNonces: ENTER");
 		getNoncesInt();
 
 		if (ignoreErrorTime < new Date().getTime()) {
@@ -2387,7 +2408,6 @@ class BTCMiner implements MsgObj {
 				}
 			}
 		}
-		//xxxdmsg("getNonces: LEAVE");
 		return submitted;
 	}
 
